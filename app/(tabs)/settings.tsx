@@ -46,7 +46,9 @@ const payloadSchema = z.object({
 });
 
 async function fs() {
-  return (await import('expo-file-system')) as any;
+  const moduleName = 'expo-file-system/legacy';
+ // eslint-disable-next-line @typescript-eslint/no-var-requires
+  return require(moduleName) as any;
 }
 
 export default function SettingsScreen() {
@@ -88,7 +90,9 @@ export default function SettingsScreen() {
       await initializeDatabase();
       const payload = await exportAllData();
       const fileSystem = await fs();
-      const fileUri = `${fileSystem.Paths.document.uri}flashcards-export-${Date.now()}.json`;
+      const writableDir = fileSystem.documentDirectory ?? fileSystem.cacheDirectory;
+      if (!writableDir) throw new Error('未找到可写目录');
+      const fileUri = `${writableDir}flashcards-export-${Date.now()}.json`;
       await fileSystem.writeAsStringAsync(fileUri, JSON.stringify(payload, null, 2));
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(fileUri, { mimeType: 'application/json' });
       setStatus(`导出成功：${fileUri}`);
