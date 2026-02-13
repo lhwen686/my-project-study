@@ -1,5 +1,8 @@
 {
   "expo": {
+"android": {
+  "versionCode": 2
+},
     "name": "my-project",
     "slug": "my-project",
     "version": "1.0.0",
