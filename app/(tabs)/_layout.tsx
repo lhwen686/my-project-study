@@ -1,9 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
+import { Palette } from '@/constants/design-tokens';
+
 export default function TabLayout() {
   return (
-    <Tabs screenOptions={{ headerTitleAlign: 'center' }}>
+    <Tabs
+      screenOptions={{
+        headerTitleAlign: 'center',
+        headerStyle: { backgroundColor: Palette.background },
+        headerTintColor: Palette.textPrimary,
+        headerTitleStyle: { fontWeight: '600' as const },
+        tabBarActiveTintColor: Palette.primary,
+        tabBarInactiveTintColor: Palette.textTertiary,
+        tabBarStyle: { backgroundColor: Palette.surface, borderTopColor: Palette.divider },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
