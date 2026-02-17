@@ -1,8 +1,17 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 
-import { parseOcclusions, pickRandomOcclusion, toAbsoluteRect } from '@/data/occlusion';
+import { type OcclusionRect, parseOcclusions, pickRandomOcclusion, toAbsoluteRect } from '@/data/occlusion';
 import { Card, getTodayDueCardsByDeckId, reviewCard } from '@/data/sqlite';
 import { rescheduleDailyReminder } from '@/services/notifications';
 import { CardShadow, CardShadowHeavy, Palette, Radius, Spacing } from '@/constants/design-tokens';
@@ -72,6 +81,11 @@ export default function ReviewScreen() {
     return `${Math.min(index + 1, cards.length)} / ${cards.length}`;
   }, [cards.length, index]);
 
+  const progressPercent = useMemo(() => {
+    if (cards.length === 0) return 0;
+    return (Math.min(index + 1, cards.length) / cards.length) * 100;
+  }, [cards.length, index]);
+
   const onGrade = async (rating: number) => {
     if (!currentCard || submitting) return;
 
@@ -125,59 +139,81 @@ export default function ReviewScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.progressBadge}>
+      {/* ── Top Progress Bar ───────────────────────────────────────────────── */}
+      <View style={styles.progressHeader}>
+        <View style={styles.progressBarTrack}>
+          <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
+        </View>
         <Text style={styles.progressText}>{progressText}</Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.faceLabel}>正面</Text>
-        <Text style={styles.faceText}>{currentCard?.front}</Text>
+      {/* ── Scrollable Content Area ────────────────────────────────────────── */}
+      <ScrollView
+        style={styles.scrollArea}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.card}>
+          {/* Question Section */}
+          <Text style={styles.sectionLabel}>QUESTION</Text>
+          <Text style={styles.questionText}>{currentCard?.front}</Text>
 
-        {!!currentCard?.image_uri && (
-          <View style={styles.imageWrap} onLayout={onImageLayout}>
-            <Image source={{ uri: currentCard.image_uri }} style={styles.image} resizeMode="cover" />
-            {!!questionMask && (() => {
-              const abs = toAbsoluteRect(questionMask, imageBoxSize.width, imageBoxSize.height);
-              return (
-                <View style={[styles.maskRect, { left: abs.left, top: abs.top, width: abs.width, height: abs.height }]}>
-                  <Text style={styles.maskText}>{showBack ? questionMask.label || '答案' : '?'}</Text>
-                </View>
-              );
-            })()}
+          {!!currentCard?.image_uri && (
+            <View style={styles.imageWrap} onLayout={onImageLayout}>
+              <Image source={{ uri: currentCard.image_uri }} style={styles.image} resizeMode="cover" />
+              {!!questionMask && (() => {
+                const abs = toAbsoluteRect(questionMask, imageBoxSize.width, imageBoxSize.height);
+                return (
+                  <View style={[styles.maskRect, { left: abs.left, top: abs.top, width: abs.width, height: abs.height }]}>
+                    <Text style={styles.maskText}>{showBack ? questionMask.label || '答案' : '?'}</Text>
+                  </View>
+                );
+              })()}
+            </View>
+          )}
+
+          {/* Answer Section (with divider) */}
+          {showBack ? (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.sectionLabel}>ANSWER</Text>
+              <Text style={styles.answerText}>{currentCard?.back}</Text>
+              {!!questionMask?.label && <Text style={styles.labelText}>遮挡结构：{questionMask.label}</Text>}
+            </>
+          ) : null}
+        </View>
+      </ScrollView>
+
+      {/* ── Bottom Action Bar ──────────────────────────────────────────────── */}
+      <View style={styles.bottomBar}>
+        {!showBack ? (
+          <Pressable
+            style={({ pressed }) => [styles.flipButton, pressed && styles.flipButtonPressed]}
+            onPress={() => setShowBack(true)}
+          >
+            <Text style={styles.flipButtonText}>显示答案</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.actionsRow}>
+            {RATING_OPTIONS.map((option) => (
+              <Pressable
+                key={option.label}
+                style={({ pressed }) => [
+                  styles.actionButton,
+                  option.style === 'good' && styles.good,
+                  option.style === 'meh' && styles.meh,
+                  option.style === 'bad' && styles.bad,
+                  pressed && styles.actionButtonPressed,
+                ]}
+                onPress={() => onGrade(option.value)}
+                disabled={submitting}
+              >
+                <Text style={styles.actionText}>{option.label}</Text>
+              </Pressable>
+            ))}
           </View>
         )}
-
-        {showBack ? (
-          <>
-            <Text style={styles.faceLabel}>背面</Text>
-            <Text style={styles.answerText}>{currentCard?.back}</Text>
-            {!!questionMask?.label && <Text style={styles.labelText}>遮挡结构：{questionMask.label}</Text>}
-          </>
-        ) : null}
       </View>
-
-      {!showBack ? (
-        <Pressable style={styles.flipButton} onPress={() => setShowBack(true)}>
-          <Text style={styles.flipButtonText}>点击翻面</Text>
-        </Pressable>
-      ) : (
-        <View style={styles.actions}>
-          {RATING_OPTIONS.map((option) => (
-            <Pressable
-              key={option.label}
-              style={[
-                styles.actionButton,
-                option.style === 'good' && styles.good,
-                option.style === 'meh' && styles.meh,
-                option.style === 'bad' && styles.bad,
-              ]}
-              onPress={() => onGrade(option.value)}
-              disabled={submitting}>
-              <Text style={styles.actionText}>{option.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
     </View>
   );
 }
@@ -186,92 +222,143 @@ const styles = StyleSheet.create({
   // ── Containers ──────────────────────────────────────────────────────────────
   container: {
     flex: 1,
-    backgroundColor: Palette.background,
-    padding: Spacing.page,
+    backgroundColor: '#F8FAFC',
   },
   center: {
     flex: 1,
-    backgroundColor: Palette.background,
+    backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 16,
     padding: Spacing.page,
   },
 
-  // ── Progress badge ───────────────────────────────────────────────────────────
-  progressBadge: {
-    backgroundColor: Palette.primaryLight,
-    borderRadius: Radius.badge,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    alignSelf: 'flex-start',
-    marginBottom: 4,
+  // ── Top Progress Bar ────────────────────────────────────────────────────────
+  progressHeader: {
+    paddingHorizontal: Spacing.page,
+    paddingTop: 12,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  progressBarTrack: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: Palette.primary,
+    borderRadius: 3,
   },
   progressText: {
-    color: Palette.primary,
-    fontSize: 14,
+    color: '#64748B',
+    fontSize: 13,
     fontWeight: '600',
+    minWidth: 44,
+    textAlign: 'right',
   },
 
-  // ── Flash card ───────────────────────────────────────────────────────────────
+  // ── Scrollable Content ──────────────────────────────────────────────────────
+  scrollArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: Spacing.page,
+    paddingBottom: 8,
+  },
+
+  // ── Flash Card ──────────────────────────────────────────────────────────────
   card: {
-    backgroundColor: Palette.surface,
-    borderRadius: Radius.card,
-    gap: 10,
-    marginTop: 12,
-    padding: Spacing.cardPadLarge,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    gap: 12,
     ...CardShadowHeavy,
   },
-  faceLabel: {
-    color: Palette.textTertiary,
+  sectionLabel: {
+    color: '#64748B',
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    letterSpacing: 1.2,
   },
-  faceText: {
-    fontSize: 22,
+  questionText: {
+    fontSize: 20,
     fontWeight: '700',
-    color: Palette.textPrimary,
-    lineHeight: 30,
+    color: '#1E293B',
+    lineHeight: 28,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 4,
   },
   answerText: {
-    fontSize: 20,
-    color: Palette.textPrimary,
-    marginTop: 6,
+    fontSize: 18,
+    color: '#1E293B',
     lineHeight: 28,
   },
   labelText: {
     color: Palette.primary,
-    fontSize: 14,
+    fontSize: 13,
+    marginTop: 4,
   },
 
-  // ── Actions ──────────────────────────────────────────────────────────────────
+  // ── Bottom Action Bar ───────────────────────────────────────────────────────
+  bottomBar: {
+    paddingHorizontal: Spacing.page,
+    paddingTop: 12,
+    paddingBottom: 24,
+    backgroundColor: '#F8FAFC',
+  },
   flipButton: {
     backgroundColor: Palette.primary,
-    borderRadius: Radius.button,
-    marginTop: 16,
-    padding: 16,
+    borderRadius: 28,
+    height: 56,
     alignItems: 'center',
+    justifyContent: 'center',
     ...CardShadow,
+  },
+  flipButtonPressed: {
+    opacity: 0.85,
   },
   flipButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
   },
-  actions: { gap: 12, marginTop: 16 },
-  actionButton: { borderRadius: Radius.button, padding: 16, alignItems: 'center' },
-  good: { backgroundColor: Palette.success },
-  meh: { backgroundColor: Palette.warning },
-  bad: { backgroundColor: Palette.danger },
-  actionText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  actionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  actionButton: {
+    flex: 1,
+    borderRadius: 14,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionButtonPressed: {
+    opacity: 0.8,
+  },
+  good: { backgroundColor: '#10B981' },
+  meh: { backgroundColor: '#64748B' },
+  bad: { backgroundColor: '#F87171' },
+  actionText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 
-  // ── Empty / Done states ──────────────────────────────────────────────────────
-  message: { color: Palette.textSecondary, fontSize: 16, textAlign: 'center' },
+  // ── Empty / Done states ─────────────────────────────────────────────────────
+  message: { color: '#64748B', fontSize: 16, textAlign: 'center' },
   doneCard: {
-    backgroundColor: Palette.surface,
-    borderRadius: Radius.card,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 40,
     alignItems: 'center',
     ...CardShadow,
@@ -287,14 +374,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // ── Image / Occlusion ────────────────────────────────────────────────────────
+  // ── Image / Occlusion ─────────────────────────────────────────────────────
   imageWrap: {
     width: '100%',
     height: IMAGE_HEIGHT,
-    borderRadius: Radius.input,
+    borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: Palette.border,
+    borderColor: '#E2E8F0',
     position: 'relative',
   },
   image: { width: '100%', height: '100%' },
