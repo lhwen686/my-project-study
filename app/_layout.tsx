@@ -7,6 +7,7 @@ import 'react-native-reanimated';
 
 import { initializeDatabase } from '@/data/sqlite';
 import { rescheduleDailyReminder } from '@/services/notifications';
+import { Palette } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function RootLayout() {
@@ -24,9 +25,9 @@ export default function RootLayout() {
 
   if (!ready) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-        <ActivityIndicator size="large" />
-        <Text>正在初始化本地数据库...</Text>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: Palette.background }}>
+        <ActivityIndicator size="large" color={Palette.primary} />
+        <Text style={{ color: Palette.textSecondary, fontSize: 15 }}>正在初始化本地数据库...</Text>
       </View>
     );
   }

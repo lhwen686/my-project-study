@@ -1,7 +1,8 @@
 import { Link, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { CardShadow, Palette, Radius, Spacing } from '@/constants/design-tokens';
 import { Deck, getDecks } from '@/data/sqlite';
 
 export default function DecksScreen() {
@@ -28,34 +29,80 @@ export default function DecksScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Decks · 科目列表</Text>
+      <Text style={styles.title}>科目列表</Text>
       {loading ? (
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={Palette.primary} style={{ marginTop: 24 }} />
+      ) : decks.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyIcon}>📚</Text>
+          <Text style={styles.emptyTitle}>暂无科目</Text>
+          <Text style={styles.emptyText}>请先在卡片列表中创建 Deck</Text>
+        </View>
       ) : (
         decks.map((deck) => (
-          <Link key={deck.id} href={`/deck/${deck.id}`} style={styles.item}>
-            {deck.name}
-            {deck.description ? ` · ${deck.description}` : ''}
+          <Link key={deck.id} href={`/deck/${deck.id}`} asChild>
+            <Pressable style={styles.item}>
+              <Text style={styles.itemName}>{deck.name}</Text>
+              {!!deck.description && (
+                <Text style={styles.itemDescription}>{deck.description}</Text>
+              )}
+            </Pressable>
           </Link>
         ))
       )}
-      {!loading && decks.length === 0 ? <Text style={styles.empty}>暂无科目，请先创建 Deck。</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, gap: 12, padding: 16 },
-  title: { fontSize: 24, fontWeight: '700', marginBottom: 8 },
-  item: {
-    borderColor: '#d0d5dd',
-    borderRadius: 12,
-    borderWidth: 1,
-    fontSize: 16,
-    padding: 14,
+  container: {
+    flex: 1,
+    backgroundColor: Palette.background,
+    padding: Spacing.page,
+    gap: Spacing.gap,
   },
-  empty: {
-    color: '#667085',
+  title: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Palette.textPrimary,
+    marginBottom: 4,
+  },
+  item: {
+    backgroundColor: Palette.surface,
+    borderRadius: Radius.card,
+    padding: Spacing.cardPad,
+    gap: 4,
+    ...CardShadow,
+  },
+  itemName: {
     fontSize: 16,
+    fontWeight: '600',
+    color: Palette.textPrimary,
+  },
+  itemDescription: {
+    fontSize: 14,
+    color: Palette.textSecondary,
+  },
+  emptyCard: {
+    backgroundColor: Palette.surface,
+    borderRadius: Radius.card,
+    padding: 40,
+    alignItems: 'center',
+    marginTop: 8,
+    ...CardShadow,
+  },
+  emptyIcon: {
+    fontSize: 44,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Palette.textPrimary,
+    marginBottom: 4,
+  },
+  emptyText: {
+    fontSize: 15,
+    color: Palette.textTertiary,
   },
 });

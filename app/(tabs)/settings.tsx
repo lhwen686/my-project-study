@@ -14,6 +14,7 @@ import {
   initializeDatabase,
 } from '@/data/sqlite';
 import { ensureReminderPermissions, updateReminderSettings } from '@/services/notifications';
+import { CardShadow, Palette, Radius, Spacing } from '@/constants/design-tokens';
 
 const payloadSchema = z.object({
   schemaVersion: z.number().int(),
@@ -157,18 +158,18 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Settings · 数据管理</Text>
+      <Text style={styles.title}>数据管理</Text>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>每日提醒</Text>
         <View style={styles.rowBetween}>
-          <Text>开启提醒</Text>
-          <Switch value={enabled} onValueChange={setEnabled} />
+          <Text style={styles.label}>开启提醒</Text>
+          <Switch value={enabled} onValueChange={setEnabled} thumbColor={Palette.surface} trackColor={{ true: Palette.primary, false: Palette.border }} />
         </View>
         <View style={styles.row}>
-          <TextInput style={styles.timeInput} keyboardType="number-pad" value={hour} onChangeText={setHour} placeholder="21" />
-          <Text>:</Text>
-          <TextInput style={styles.timeInput} keyboardType="number-pad" value={minute} onChangeText={setMinute} placeholder="30" />
+          <TextInput style={styles.timeInput} keyboardType="number-pad" value={hour} onChangeText={setHour} placeholder="21" placeholderTextColor={Palette.textTertiary} />
+          <Text style={styles.timeSeparator}>:</Text>
+          <TextInput style={styles.timeInput} keyboardType="number-pad" value={minute} onChangeText={setMinute} placeholder="30" placeholderTextColor={Palette.textTertiary} />
         </View>
         <View style={styles.row}>
           <Pressable style={onCompleted === 'skip' ? styles.primary : styles.secondary} onPress={() => setOnCompleted('skip')}>
@@ -177,7 +178,7 @@ export default function SettingsScreen() {
           <Pressable
             style={onCompleted === 'completed' ? styles.primary : styles.secondary}
             onPress={() => setOnCompleted('completed')}>
-            <Text style={styles.btnText}>改为“已完成✅”</Text>
+            <Text style={styles.btnText}>改为"已完成✅"</Text>
           </Pressable>
         </View>
         <Pressable style={styles.primary} onPress={saveReminder}>
@@ -211,24 +212,111 @@ export default function SettingsScreen() {
         </Pressable>
       </View>
 
-      <Text style={styles.status}>{status || '等待操作...'}</Text>
+      <View style={styles.statusContainer}>
+        <Text style={styles.statusText}>{status || '等待操作...'}</Text>
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 12, padding: 16 },
-  title: { fontSize: 24, fontWeight: '700' },
-  card: { backgroundColor: '#f2f4f7', borderRadius: 12, gap: 10, padding: 12 },
-  cardTitle: { fontSize: 16, fontWeight: '700' },
-  row: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  timeInput: { backgroundColor: '#fff', borderColor: '#d0d5dd', borderRadius: 8, borderWidth: 1, minWidth: 56, padding: 8 },
-  primary: { backgroundColor: '#155eef', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
-  secondary: { backgroundColor: '#98a2b3', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
-  warn: { backgroundColor: '#f79009', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
-  danger: { backgroundColor: '#d92d20', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
-  btnText: { color: '#fff', fontWeight: '700' },
+  container: {
+    backgroundColor: Palette.background,
+    gap: Spacing.gap,
+    padding: Spacing.page,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Palette.textPrimary,
+  },
+  card: {
+    backgroundColor: Palette.surface,
+    borderRadius: Radius.card,
+    gap: 12,
+    padding: Spacing.cardPad,
+    ...CardShadow,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Palette.textPrimary,
+  },
+  label: {
+    fontSize: 15,
+    color: Palette.textPrimary,
+  },
+  row: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  timeInput: {
+    backgroundColor: Palette.background,
+    borderColor: Palette.border,
+    borderRadius: Radius.input,
+    borderWidth: 1,
+    minWidth: 56,
+    padding: 10,
+    fontSize: 16,
+    color: Palette.textPrimary,
+    textAlign: 'center',
+  },
+  timeSeparator: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Palette.textSecondary,
+  },
+  primary: {
+    backgroundColor: Palette.primary,
+    borderRadius: Radius.button,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  secondary: {
+    backgroundColor: Palette.textTertiary,
+    borderRadius: Radius.button,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  warn: {
+    backgroundColor: Palette.warning,
+    borderRadius: Radius.button,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  danger: {
+    backgroundColor: Palette.danger,
+    borderRadius: Radius.button,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  btnText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 15,
+  },
   disabled: { opacity: 0.5 },
-  status: { color: '#344054', fontSize: 14, marginTop: 8 },
+  statusContainer: {
+    backgroundColor: Palette.primaryLight,
+    borderRadius: Radius.button,
+    padding: 12,
+    marginTop: 4,
+  },
+  statusText: {
+    color: Palette.primary,
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
 });

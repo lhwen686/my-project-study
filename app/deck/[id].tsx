@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 
 import { createOcclusionAtPoint, parseOcclusions, type OcclusionRect, toAbsoluteRect } from '@/data/occlusion';
+import { CardShadow, Palette, Radius, Spacing } from '@/constants/design-tokens';
 import { buildTemplatePreview, getTemplateFields, type TemplateKind } from '@/data/templates';
 import {
   Card,
@@ -459,63 +460,80 @@ export default function DeckDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 10, padding: 16 },
-  title: { fontSize: 24, fontWeight: '700' },
-  subtitle: { color: '#667085', fontSize: 16, marginBottom: 8 },
-  message: { color: '#155eef', fontSize: 14 },
-  toolbar: { backgroundColor: '#f2f4f7', borderRadius: 10, gap: 8, padding: 10 },
-  formCard: { backgroundColor: '#eff4ff', borderRadius: 10, gap: 8, padding: 12 },
-  formCardMuted: { backgroundColor: '#dbe6ff', borderRadius: 8, gap: 4, padding: 10 },
-  formTitle: { fontSize: 16, fontWeight: '700' },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#344054' },
-  previewLabel: { color: '#344054', fontWeight: '700', fontSize: 12 },
-  previewText: { color: '#101828', fontSize: 13 },
-  input: { backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#d0d5dd', padding: 10 },
+  // ── Layout ──────────────────────────────────────────────────────────────────
+  container: { backgroundColor: Palette.background, gap: 12, padding: Spacing.page },
+  title: { fontSize: 24, fontWeight: '700', color: Palette.textPrimary },
+  subtitle: { color: Palette.textSecondary, fontSize: 16, marginBottom: 8 },
+  message: { color: Palette.primary, fontSize: 14, fontWeight: '500' },
+
+  // ── Toolbar / Filters ───────────────────────────────────────────────────────
+  toolbar: { backgroundColor: Palette.surface, borderRadius: Radius.card, gap: 10, padding: Spacing.cardPad, ...CardShadow },
+
+  // ── Form cards ──────────────────────────────────────────────────────────────
+  formCard: { backgroundColor: Palette.surface, borderRadius: Radius.card, gap: 10, padding: Spacing.cardPad, ...CardShadow },
+  formCardMuted: { backgroundColor: Palette.divider, borderRadius: Radius.input, gap: 4, padding: 12 },
+  formTitle: { fontSize: 16, fontWeight: '700', color: Palette.textPrimary },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: Palette.textSecondary },
+  previewLabel: { color: Palette.textSecondary, fontWeight: '700', fontSize: 12 },
+  previewText: { color: Palette.textPrimary, fontSize: 13 },
+
+  // ── Inputs ──────────────────────────────────────────────────────────────────
+  input: { backgroundColor: Palette.surface, borderRadius: Radius.input, borderWidth: 1, borderColor: Palette.border, padding: 12, fontSize: 15, color: Palette.textPrimary },
   csvInput: { minHeight: 110 },
+
+  // ── Row layouts ─────────────────────────────────────────────────────────────
   row: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  primaryButton: { backgroundColor: '#155eef', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
-  secondaryButton: { backgroundColor: '#98a2b3', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
-  card: { backgroundColor: '#f9fafb', borderRadius: 10, gap: 6, padding: 12 },
-  front: { fontSize: 16, fontWeight: '600', flex: 1 },
-  back: { color: '#475467', fontSize: 15 },
-  meta: { color: '#155eef', fontSize: 13 },
-  metaText: { color: '#155eef', fontSize: 12, fontWeight: '600' },
-  editBtn: { backgroundColor: '#17b26a', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
-  deleteBtn: { backgroundColor: '#d92d20', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
-  selectedBadge: { backgroundColor: '#17b26a', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
-  unselectedBadge: { backgroundColor: '#98a2b3', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
-  badgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  buttonText: { color: '#fff', fontWeight: '600' },
+
+  // ── Buttons ─────────────────────────────────────────────────────────────────
+  primaryButton: { backgroundColor: Palette.primary, borderRadius: Radius.button, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center' },
+  secondaryButton: { backgroundColor: Palette.textTertiary, borderRadius: Radius.button, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center' },
+
+  // ── CardItem styles ──────────────────────────────────────────────────────────
+  card: { backgroundColor: Palette.surface, borderRadius: Radius.card, gap: 8, padding: Spacing.cardPad, ...CardShadow },
+  front: { fontSize: 16, fontWeight: '600', color: Palette.textPrimary, flex: 1 },
+  back: { color: Palette.textSecondary, fontSize: 15 },
+  meta: { color: Palette.primary, fontSize: 13 },
+  metaText: { color: Palette.primary, fontSize: 12, fontWeight: '600' },
+  editBtn: { backgroundColor: Palette.success, borderRadius: Radius.button, paddingHorizontal: 14, paddingVertical: 8, alignItems: 'center' },
+  deleteBtn: { backgroundColor: Palette.danger, borderRadius: Radius.button, paddingHorizontal: 14, paddingVertical: 8, alignItems: 'center' },
+  selectedBadge: { backgroundColor: Palette.success, borderRadius: Radius.badge, paddingHorizontal: 10, paddingVertical: 4 },
+  unselectedBadge: { backgroundColor: Palette.textTertiary, borderRadius: Radius.badge, paddingHorizontal: 10, paddingVertical: 4 },
+  badgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  buttonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 14 },
   reviewButton: {
-    backgroundColor: '#155eef',
-    borderRadius: 12,
-    color: 'white',
+    backgroundColor: Palette.primary,
+    borderRadius: Radius.button,
+    color: '#FFFFFF',
     marginTop: 8,
     overflow: 'hidden',
-    padding: 14,
+    padding: 16,
     textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '600',
   },
+
+  // ── Occlusion editor ────────────────────────────────────────────────────────
   editorWrap: { gap: 8 },
-  editorHint: { color: '#475467', fontSize: 12 },
+  editorHint: { color: Palette.textSecondary, fontSize: 12 },
   imagePressArea: {
-    borderRadius: 10,
+    borderRadius: Radius.input,
     overflow: 'hidden',
     position: 'relative',
     width: '100%',
     height: IMAGE_BOX_HEIGHT,
     borderWidth: 1,
-    borderColor: '#98a2b3',
+    borderColor: Palette.border,
   },
   previewImage: { width: '100%', height: '100%' },
   occlusionRect: {
     position: 'absolute',
-    backgroundColor: 'rgba(13, 110, 253, 0.65)',
+    backgroundColor: 'rgba(37, 99, 235, 0.65)',
     borderWidth: 1,
     borderColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  occlusionText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  listThumb: { width: '100%', height: 150, borderRadius: 8, marginVertical: 4 },
+  occlusionText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+  listThumb: { width: '100%', height: 150, borderRadius: Radius.input, marginVertical: 4 },
 });

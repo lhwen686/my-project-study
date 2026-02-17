@@ -5,6 +5,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View, type Layou
 import { parseOcclusions, pickRandomOcclusion, toAbsoluteRect } from '@/data/occlusion';
 import { Card, getTodayDueCardsByDeckId, reviewCard } from '@/data/sqlite';
 import { rescheduleDailyReminder } from '@/services/notifications';
+import { CardShadow, CardShadowHeavy, Palette, Radius, Spacing } from '@/constants/design-tokens';
 
 const RATING_OPTIONS = [
   { label: '会', value: 5, style: 'good' as const },
@@ -97,7 +98,6 @@ export default function ReviewScreen() {
   if (!Number.isFinite(deckId)) {
     return (
       <View style={styles.center}>
-        <Text style={styles.title}>Review · 复习界面</Text>
         <Text style={styles.message}>无效的 deck id：{String(id)}</Text>
       </View>
     );
@@ -106,7 +106,7 @@ export default function ReviewScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={Palette.primary} />
         <Text style={styles.message}>正在加载今日待复习卡片...</Text>
       </View>
     );
@@ -115,16 +115,19 @@ export default function ReviewScreen() {
   if (emptyDue || finished) {
     return (
       <View style={styles.center}>
-        <Text style={styles.title}>Review · 复习界面</Text>
-        <Text style={styles.done}>🎉 今日 due 卡片已复习完成！</Text>
+        <View style={styles.doneCard}>
+          <Text style={styles.doneEmoji}>🎉</Text>
+          <Text style={styles.done}>今日复习全部完成！</Text>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Review · 复习界面</Text>
-      <Text style={styles.progress}>进度：{progressText}</Text>
+      <View style={styles.progressBadge}>
+        <Text style={styles.progressText}>{progressText}</Text>
+      </View>
 
       <View style={styles.card}>
         <Text style={styles.faceLabel}>正面</Text>
@@ -180,53 +183,128 @@ export default function ReviewScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 16 },
-  title: { fontSize: 24, fontWeight: '700' },
-  progress: { color: '#667085', fontSize: 16, marginTop: 8 },
+  // ── Containers ──────────────────────────────────────────────────────────────
+  container: {
+    flex: 1,
+    backgroundColor: Palette.background,
+    padding: Spacing.page,
+  },
+  center: {
+    flex: 1,
+    backgroundColor: Palette.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+    padding: Spacing.page,
+  },
+
+  // ── Progress badge ───────────────────────────────────────────────────────────
+  progressBadge: {
+    backgroundColor: Palette.primaryLight,
+    borderRadius: Radius.badge,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+  },
+  progressText: {
+    color: Palette.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // ── Flash card ───────────────────────────────────────────────────────────────
   card: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    gap: 8,
-    marginTop: 18,
-    padding: 16,
+    backgroundColor: Palette.surface,
+    borderRadius: Radius.card,
+    gap: 10,
+    marginTop: 12,
+    padding: Spacing.cardPadLarge,
+    ...CardShadowHeavy,
   },
-  faceLabel: { color: '#475467', fontSize: 14 },
-  faceText: { fontSize: 22, fontWeight: '700' },
-  answerText: { fontSize: 20, marginTop: 6 },
-  labelText: { color: '#155eef', fontSize: 14 },
+  faceLabel: {
+    color: Palette.textTertiary,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  faceText: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Palette.textPrimary,
+    lineHeight: 30,
+  },
+  answerText: {
+    fontSize: 20,
+    color: Palette.textPrimary,
+    marginTop: 6,
+    lineHeight: 28,
+  },
+  labelText: {
+    color: Palette.primary,
+    fontSize: 14,
+  },
+
+  // ── Actions ──────────────────────────────────────────────────────────────────
   flipButton: {
-    backgroundColor: '#155eef',
-    borderRadius: 10,
+    backgroundColor: Palette.primary,
+    borderRadius: Radius.button,
     marginTop: 16,
-    padding: 14,
+    padding: 16,
+    alignItems: 'center',
+    ...CardShadow,
   },
-  flipButtonText: { color: '#fff', fontSize: 16, textAlign: 'center' },
-  actions: { gap: 10, marginTop: 16 },
-  actionButton: { borderRadius: 10, padding: 14 },
-  good: { backgroundColor: '#17b26a' },
-  meh: { backgroundColor: '#f79009' },
-  bad: { backgroundColor: '#d92d20' },
-  actionText: { color: '#fff', fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  message: { color: '#667085', fontSize: 16 },
-  done: { color: '#155eef', fontSize: 20, fontWeight: '700', textAlign: 'center' },
+  flipButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  actions: { gap: 12, marginTop: 16 },
+  actionButton: { borderRadius: Radius.button, padding: 16, alignItems: 'center' },
+  good: { backgroundColor: Palette.success },
+  meh: { backgroundColor: Palette.warning },
+  bad: { backgroundColor: Palette.danger },
+  actionText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+
+  // ── Empty / Done states ──────────────────────────────────────────────────────
+  message: { color: Palette.textSecondary, fontSize: 16, textAlign: 'center' },
+  doneCard: {
+    backgroundColor: Palette.surface,
+    borderRadius: Radius.card,
+    padding: 40,
+    alignItems: 'center',
+    ...CardShadow,
+  },
+  doneEmoji: {
+    fontSize: 52,
+    marginBottom: 16,
+  },
+  done: {
+    color: Palette.primary,
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  // ── Image / Occlusion ────────────────────────────────────────────────────────
   imageWrap: {
     width: '100%',
     height: IMAGE_HEIGHT,
-    borderRadius: 10,
+    borderRadius: Radius.input,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#98a2b3',
+    borderColor: Palette.border,
     position: 'relative',
   },
   image: { width: '100%', height: '100%' },
   maskRect: {
     position: 'absolute',
-    backgroundColor: 'rgba(16, 24, 40, 0.72)',
-    borderColor: '#fff',
+    backgroundColor: 'rgba(30, 41, 59, 0.75)',
+    borderColor: '#FFFFFF',
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  maskText: { color: '#fff', fontWeight: '700' },
+  maskText: { color: '#FFFFFF', fontWeight: '700' },
 });
