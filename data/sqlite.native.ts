@@ -172,6 +172,11 @@ export async function initializeDatabase() {
     );
   `);
 
+  await db.execAsync(`
+    CREATE INDEX IF NOT EXISTS idx_cards_deck_due ON cards(deck_id, due_date);
+    CREATE INDEX IF NOT EXISTS idx_reviews_reviewed_at ON reviews(reviewed_at);
+  `);
+
   await ensureCardColumns(db);
   await ensureMetaTable(db);
 
@@ -382,6 +387,16 @@ export async function reviewCard(cardId: number, rating: number, reviewedAt: Dat
 
 export async function getTodayDueCount(now: Date = new Date()) {
   return (await getDb()).getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM cards WHERE due_date <= ?;', now.toISOString()).then((r) => r?.count ?? 0);
+}
+export async function getDecksDueToday(now: Date = new Date()) {
+  return (await getDb()).getAllAsync<{ id: number; name: string; due_count: number }>(
+    `SELECT d.id, d.name, COUNT(c.id) as due_count
+     FROM decks d
+     LEFT JOIN cards c ON c.deck_id = d.id AND c.due_date <= ?
+     GROUP BY d.id, d.name
+     ORDER BY d.id ASC;`,
+    now.toISOString(),
+  );
 }
 export async function getLapsesCount() {
   return (await getDb()).getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM reviews WHERE rating = 1;').then((r) => r?.count ?? 0);

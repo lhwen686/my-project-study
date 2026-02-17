@@ -5,6 +5,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View
 import { z } from 'zod';
 
 import {
+  ExportPayload,
   clearAllData,
   exportAllData,
   getReminderSettings,
@@ -53,6 +54,7 @@ async function fs() {
 
 export default function SettingsScreen() {
   const [status, setStatus] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [hour, setHour] = useState('21');
   const [minute, setMinute] = useState('30');
@@ -86,6 +88,9 @@ export default function SettingsScreen() {
   };
 
   const handleExport = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    setStatus('导出中...');
     try {
       await initializeDatabase();
       const payload = await exportAllData();
@@ -99,14 +104,22 @@ export default function SettingsScreen() {
     } catch (error) {
       console.error(error);
       setStatus('导出失败');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const importFromJson = async (mode: 'merge' | 'replace') => {
+    if (isLoading) return;
+    setIsLoading(true);
+    setStatus('导入中...');
     try {
       await initializeDatabase();
       const picked = await DocumentPicker.getDocumentAsync({ type: 'application/json', copyToCacheDirectory: true });
-      if (picked.canceled || !picked.assets?.[0]?.uri) return;
+      if (picked.canceled || !picked.assets?.[0]?.uri) {
+        setStatus('');
+        return;
+      }
       const fileSystem = await fs();
       const jsonText = await fileSystem.readAsStringAsync(picked.assets[0].uri);
       const parsed = JSON.parse(jsonText);
@@ -116,13 +129,15 @@ export default function SettingsScreen() {
         setStatus(`导入失败：字段 ${issue.path.join('.')} - ${issue.message}`);
         return;
       }
-      await importAllData(result.data as any, mode);
+      await importAllData(result.data as ExportPayload, mode);
       const after = await exportAllData();
       const due = await getTodayDueCount();
       setStatus(`导入成功（${mode === 'merge' ? '合并' : '覆盖'}）：cards=${after.cards.length}, reviews=${after.reviews.length}, due=${due}`);
     } catch (error) {
       console.error(error);
       setStatus(`导入失败：${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -172,7 +187,7 @@ export default function SettingsScreen() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>导出 JSON 并分享</Text>
-        <Pressable style={styles.primary} onPress={handleExport}>
+        <Pressable style={[styles.primary, isLoading && styles.disabled]} onPress={handleExport} disabled={isLoading}>
           <Text style={styles.btnText}>导出全量数据</Text>
         </Pressable>
       </View>
@@ -180,10 +195,10 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>JSON 导入（zod 校验）</Text>
         <View style={styles.row}>
-          <Pressable style={styles.primary} onPress={() => importFromJson('merge')}>
+          <Pressable style={[styles.primary, isLoading && styles.disabled]} onPress={() => importFromJson('merge')} disabled={isLoading}>
             <Text style={styles.btnText}>导入（合并）</Text>
           </Pressable>
-          <Pressable style={styles.warn} onPress={() => importFromJson('replace')}>
+          <Pressable style={[styles.warn, isLoading && styles.disabled]} onPress={() => importFromJson('replace')} disabled={isLoading}>
             <Text style={styles.btnText}>导入（覆盖）</Text>
           </Pressable>
         </View>
@@ -214,5 +229,6 @@ const styles = StyleSheet.create({
   warn: { backgroundColor: '#f79009', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
   danger: { backgroundColor: '#d92d20', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
   btnText: { color: '#fff', fontWeight: '700' },
+  disabled: { opacity: 0.5 },
   status: { color: '#344054', fontSize: 14, marginTop: 8 },
 });

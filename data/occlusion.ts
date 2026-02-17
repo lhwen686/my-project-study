@@ -6,6 +6,23 @@ export type OcclusionRect = {
   label?: string;
 };
 
+export function parseOcclusions(raw?: string | null): OcclusionRect[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (x) =>
+        typeof x?.x === 'number' &&
+        typeof x?.y === 'number' &&
+        typeof x?.width === 'number' &&
+        typeof x?.height === 'number',
+    );
+  } catch {
+    return [];
+  }
+}
+
 export function clamp01(v: number) {
   return Math.max(0, Math.min(1, v));
 }

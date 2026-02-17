@@ -1,5 +1,5 @@
 import { Link, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -14,7 +14,7 @@ import {
   type TextInputSubmitEditingEventData,
 } from 'react-native';
 
-import { createOcclusionAtPoint, type OcclusionRect, toAbsoluteRect } from '@/data/occlusion';
+import { createOcclusionAtPoint, parseOcclusions, type OcclusionRect, toAbsoluteRect } from '@/data/occlusion';
 import { buildTemplatePreview, getTemplateFields, type TemplateKind } from '@/data/templates';
 import {
   Card,
@@ -37,16 +37,38 @@ const DEFAULT_CSV = `deck,front,back,tags
 
 const IMAGE_BOX_HEIGHT = 220;
 
-function parseOcclusions(raw?: string | null): OcclusionRect[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((x) => typeof x?.x === 'number' && typeof x?.y === 'number' && typeof x?.width === 'number' && typeof x?.height === 'number');
-  } catch {
-    return [];
-  }
-}
+type CardItemProps = {
+  card: Card;
+  isSelected: boolean;
+  onToggleSelect: (id: number) => void;
+  onEdit: (card: Card) => void;
+  onDelete: (id: number) => void;
+};
+
+const CardItem = memo(function CardItem({ card, isSelected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
+  const marks = parseOcclusions(card.occlusions);
+  return (
+    <View style={styles.card}>
+      <View style={styles.rowBetween}>
+        <Text style={styles.front}>{card.front}</Text>
+        <Pressable style={isSelected ? styles.selectedBadge : styles.unselectedBadge} onPress={() => onToggleSelect(card.id)}>
+          <Text style={styles.badgeText}>{isSelected ? '已选' : '选择'}</Text>
+        </Pressable>
+      </View>
+      {!!card.image_uri && <Image source={{ uri: card.image_uri }} style={styles.listThumb} resizeMode="cover" />}
+      <Text style={styles.back}>{card.back}</Text>
+      <Text style={styles.meta}>tags: {card.tags || '-'} | lapse: {card.lapse_count ?? 0} | 遮挡: {marks.length}</Text>
+      <View style={styles.row}>
+        <Pressable style={styles.editBtn} onPress={() => onEdit(card)}>
+          <Text style={styles.buttonText}>编辑</Text>
+        </Pressable>
+        <Pressable style={styles.deleteBtn} onPress={() => onDelete(card.id)}>
+          <Text style={styles.buttonText}>删除</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
 
 export default function DeckDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -101,6 +123,12 @@ export default function DeckDetailScreen() {
   useEffect(() => {
     loadDeckDetail();
   }, [loadDeckDetail]);
+
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => setMessage(''), 3000);
+    return () => clearTimeout(t);
+  }, [message]);
 
   const templateFields = useMemo(
     () => getTemplateFields(templateKind, customTemplateFieldsInput),
@@ -159,7 +187,7 @@ export default function DeckDetailScreen() {
     await loadDeckDetail();
   };
 
-  const onEdit = (card: Card) => {
+  const onEdit = useCallback((card: Card) => {
     setEditingId(card.id);
     setFront(card.front);
     setBack(card.back);
@@ -168,13 +196,13 @@ export default function DeckDetailScreen() {
     setOcclusions(parseOcclusions(card.occlusions));
     setTemplateKind('none');
     setTemplateValues({});
-  };
+  }, []);
 
-  const onDelete = async (cardId: number) => {
+  const onDelete = useCallback(async (cardId: number) => {
     await deleteCard(cardId);
     setMessage('已删除卡片');
     await loadDeckDetail();
-  };
+  }, [loadDeckDetail]);
 
   const onImport = async () => {
     try {
@@ -205,14 +233,14 @@ export default function DeckDetailScreen() {
     setOcclusions((prev) => prev.map((o, idx) => (idx === prev.length - 1 ? { ...o, label } : o)));
   };
 
-  const toggleSelect = (cardId: number) => {
+  const toggleSelect = useCallback((cardId: number) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(cardId)) next.delete(cardId);
       else next.add(cardId);
       return next;
     });
-  };
+  }, []);
 
   const selectedIds = [...selected];
 
@@ -412,30 +440,15 @@ export default function DeckDetailScreen() {
           </View>
         </>
       }
-      renderItem={({ item: card }) => {
-        const marks = parseOcclusions(card.occlusions);
-        return (
-          <View style={styles.card}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.front}>{card.front}</Text>
-              <Pressable style={selected.has(card.id) ? styles.selectedBadge : styles.unselectedBadge} onPress={() => toggleSelect(card.id)}>
-                <Text style={styles.badgeText}>{selected.has(card.id) ? '已选' : '选择'}</Text>
-              </Pressable>
-            </View>
-            {!!card.image_uri && <Image source={{ uri: card.image_uri }} style={styles.listThumb} resizeMode="cover" />}
-            <Text style={styles.back}>{card.back}</Text>
-            <Text style={styles.meta}>tags: {card.tags || '-'} | lapse: {card.lapse_count ?? 0} | 遮挡: {marks.length}</Text>
-            <View style={styles.row}>
-              <Pressable style={styles.editBtn} onPress={() => onEdit(card)}>
-                <Text style={styles.buttonText}>编辑</Text>
-              </Pressable>
-              <Pressable style={styles.deleteBtn} onPress={() => onDelete(card.id)}>
-                <Text style={styles.buttonText}>删除</Text>
-              </Pressable>
-            </View>
-          </View>
-        );
-      }}
+      renderItem={({ item: card }) => (
+        <CardItem
+          card={card}
+          isSelected={selected.has(card.id)}
+          onToggleSelect={toggleSelect}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      )}
       ListFooterComponent={
         <Link href={`/review/${id}`} style={styles.reviewButton}>
           开始复习

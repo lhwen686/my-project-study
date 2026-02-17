@@ -308,6 +308,15 @@ export async function getTodayDueCount(now: Date = new Date()) {
   ensureInit();
   return state.cards.filter((c) => c.due_date <= now.toISOString()).length;
 }
+export async function getDecksDueToday(now: Date = new Date()) {
+  ensureInit();
+  const nowIso = now.toISOString();
+  return state.decks.map((deck) => ({
+    id: deck.id,
+    name: deck.name,
+    due_count: state.cards.filter((c) => c.deck_id === deck.id && c.due_date <= nowIso).length,
+  }));
+}
 export async function getLapsesCount() {
   ensureInit();
   return state.reviews.filter((r) => r.rating === 1).length;

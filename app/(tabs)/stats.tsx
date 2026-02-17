@@ -2,34 +2,23 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import { DeckMastery, getStatsSummary } from '@/data/sqlite';
+import { StatsSummary, getStatsSummary } from '@/data/sqlite';
+
+type StatsState = { loading: boolean; data: StatsSummary | null; error: boolean };
+
+const INITIAL: StatsState = { loading: true, data: null, error: false };
 
 export default function StatsScreen() {
-  const [loading, setLoading] = useState(true);
-  const [dueCount, setDueCount] = useState(0);
-  const [todayCompleted, setTodayCompleted] = useState(0);
-  const [streakDays, setStreakDays] = useState(0);
-  const [lapsesCount, setLapsesCount] = useState(0);
-  const [masteryByDeck, setMasteryByDeck] = useState<DeckMastery[]>([]);
+  const [state, setState] = useState<StatsState>(INITIAL);
 
   const loadStats = useCallback(async () => {
-    setLoading(true);
+    setState({ loading: true, data: null, error: false });
     try {
       const summary = await getStatsSummary();
-      setDueCount(summary.dueCount);
-      setTodayCompleted(summary.todayCompleted);
-      setStreakDays(summary.streakDays);
-      setLapsesCount(summary.lapsesCount);
-      setMasteryByDeck(summary.masteryByDeck);
+      setState({ loading: false, data: summary, error: false });
     } catch (error) {
       console.error('Failed to load stats:', error);
-      setDueCount(0);
-      setTodayCompleted(0);
-      setStreakDays(0);
-      setLapsesCount(0);
-      setMasteryByDeck([]);
-    } finally {
-      setLoading(false);
+      setState({ loading: false, data: null, error: true });
     }
   }, []);
 
@@ -42,20 +31,22 @@ export default function StatsScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Stats · 统计</Text>
-      {loading ? (
-        <ActivityIndicator size="small" />
+      {state.loading ? (
+        <ActivityIndicator size="large" />
+      ) : state.error || !state.data ? (
+        <Text style={styles.empty}>加载失败，请稍后重试。</Text>
       ) : (
         <>
-          <Text style={styles.text}>今日完成：{todayCompleted} 张</Text>
-          <Text style={styles.text}>连续天数：{streakDays} 天</Text>
-          <Text style={styles.due}>今日待复习：{dueCount} 张</Text>
-          <Text style={styles.lapses}>Lapses（不会）：{lapsesCount}</Text>
+          <Text style={styles.text}>今日完成：{state.data.todayCompleted} 张</Text>
+          <Text style={styles.text}>连续天数：{state.data.streakDays} 天</Text>
+          <Text style={styles.due}>今日待复习：{state.data.dueCount} 张</Text>
+          <Text style={styles.lapses}>Lapses（不会）：{state.data.lapsesCount}</Text>
 
           <Text style={styles.sectionTitle}>按 Deck 掌握度（7 日正确率）</Text>
-          {masteryByDeck.length === 0 ? (
+          {state.data.masteryByDeck.length === 0 ? (
             <Text style={styles.empty}>最近 7 日暂无复习数据</Text>
           ) : (
-            masteryByDeck.map((row) => (
+            state.data.masteryByDeck.map((row) => (
               <Text key={row.deck_id} style={styles.masteryRow}>
                 {row.deck_name}：{row.accuracy}%（{row.correct}/{row.total}）
               </Text>
