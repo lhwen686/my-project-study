@@ -2,7 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 
-import { pickRandomOcclusion, toAbsoluteRect, type OcclusionRect } from '@/data/occlusion';
+import { parseOcclusions, pickRandomOcclusion, toAbsoluteRect } from '@/data/occlusion';
 import { Card, getTodayDueCardsByDeckId, reviewCard } from '@/data/sqlite';
 import { rescheduleDailyReminder } from '@/services/notifications';
 
@@ -12,16 +12,7 @@ const RATING_OPTIONS = [
   { label: '不会', value: 1, style: 'bad' as const },
 ];
 
-function parseOcclusions(raw?: string | null): OcclusionRect[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((x) => typeof x?.x === 'number' && typeof x?.y === 'number' && typeof x?.width === 'number' && typeof x?.height === 'number');
-  } catch {
-    return [];
-  }
-}
+const IMAGE_HEIGHT = 220;
 
 export default function ReviewScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -33,7 +24,7 @@ export default function ReviewScreen() {
   const [showBack, setShowBack] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [shownAt, setShownAt] = useState<number>(Date.now());
-  const [imageBoxSize, setImageBoxSize] = useState({ width: 1, height: 220 });
+  const [imageBoxSize, setImageBoxSize] = useState({ width: 1, height: IMAGE_HEIGHT });
   const [questionMask, setQuestionMask] = useState<OcclusionRect | null>(null);
 
   const currentCard = cards[index] ?? null;
@@ -221,7 +212,7 @@ const styles = StyleSheet.create({
   done: { color: '#155eef', fontSize: 20, fontWeight: '700', textAlign: 'center' },
   imageWrap: {
     width: '100%',
-    height: 220,
+    height: IMAGE_HEIGHT,
     borderRadius: 10,
     overflow: 'hidden',
     borderWidth: 1,
