@@ -11,10 +11,11 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 
+import { RichTextRenderer } from '@/components/rich-text-renderer';
 import { type OcclusionRect, parseOcclusions, pickRandomOcclusion, toAbsoluteRect } from '@/data/occlusion';
 import { Card, getTodayDueCardsByDeckId, reviewCard } from '@/data/sqlite';
 import { rescheduleDailyReminder } from '@/services/notifications';
-import { CardShadow, CardShadowHeavy, Palette, Radius, Spacing } from '@/constants/design-tokens';
+import { CardShadow, CardShadowHeavy, Palette, Spacing } from '@/constants/design-tokens';
 
 const RATING_OPTIONS = [
   { label: '会', value: 5, style: 'good' as const },
@@ -156,7 +157,9 @@ export default function ReviewScreen() {
         <View style={styles.card}>
           {/* Question Section */}
           <Text style={styles.sectionLabel}>QUESTION</Text>
-          <Text style={styles.questionText}>{currentCard?.front}</Text>
+          {currentCard?.front ? (
+            <RichTextRenderer content={currentCard.front} variant="question" />
+          ) : null}
 
           {!!currentCard?.image_uri && (
             <View style={styles.imageWrap} onLayout={onImageLayout}>
@@ -177,7 +180,9 @@ export default function ReviewScreen() {
             <>
               <View style={styles.divider} />
               <Text style={styles.sectionLabel}>ANSWER</Text>
-              <Text style={styles.answerText}>{currentCard?.back}</Text>
+              {currentCard?.back ? (
+                <RichTextRenderer content={currentCard.back} variant="answer" />
+              ) : null}
               {!!questionMask?.label && <Text style={styles.labelText}>遮挡结构：{questionMask.label}</Text>}
             </>
           ) : null}
@@ -286,21 +291,10 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1.2,
   },
-  questionText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
-    lineHeight: 28,
-  },
   divider: {
     height: 1,
     backgroundColor: '#E2E8F0',
     marginVertical: 4,
-  },
-  answerText: {
-    fontSize: 18,
-    color: '#1E293B',
-    lineHeight: 28,
   },
   labelText: {
     color: Palette.primary,
