@@ -15,12 +15,12 @@
 
 import katex from 'katex';
 import MarkdownIt from 'markdown-it';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Platform,
   StyleSheet,
   Text,
-  View,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
@@ -94,11 +94,21 @@ export function RichTextRenderer({ content, variant, style }: Props) {
 
 function RichWebView({ content, variant, style }: Props) {
   const [height, setHeight] = useState(FALLBACK_HEIGHT);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const html = useMemo(
     () => buildHtmlDocument(content, variant),
     [content, variant],
   );
+
+  useEffect(() => {
+    fadeAnim.setValue(0);
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [content, fadeAnim]);
 
   const onMessage = useCallback((e: WebViewMessageEvent) => {
     try {
@@ -119,7 +129,7 @@ function RichWebView({ content, variant, style }: Props) {
   }, []);
 
   return (
-    <View style={[styles.container, { height }, style]}>
+    <Animated.View style={[styles.container, { height, opacity: fadeAnim }, style]}>
       <WebView
         source={{ html }}
         style={styles.webView}
@@ -134,7 +144,7 @@ function RichWebView({ content, variant, style }: Props) {
         }
         {...(Platform.OS === 'android' ? { androidLayerType: 'hardware' } : {})}
       />
-    </View>
+    </Animated.View>
   );
 }
 
@@ -226,9 +236,11 @@ ${KATEX_CSS}
 *{box-sizing:border-box;margin:0;padding:0;}
 
 html,body{
-  background:transparent;
+  background:#F8FAFC;
   -webkit-text-size-adjust:100%;
 }
+
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
 
 body{
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
@@ -240,6 +252,7 @@ body{
   overflow-x:hidden;
   word-wrap:break-word;
   overflow-wrap:break-word;
+  animation:fadeIn 0.3s ease-in;
 }
 
 /* ── Headings ─────────────────────────────────────────────────────────────── */
@@ -379,6 +392,6 @@ const styles = StyleSheet.create({
   },
   webView: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: '#F8FAFC',
   },
 });

@@ -6,7 +6,6 @@ import { ActivityIndicator, Text, View } from 'react-native';
 import 'react-native-reanimated';
 
 import { initializeDatabase } from '@/data/sqlite';
-import { rescheduleDailyReminder } from '@/services/notifications';
 import { Palette } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -16,7 +15,6 @@ export default function RootLayout() {
 
   useEffect(() => {
     initializeDatabase()
-      .then(() => rescheduleDailyReminder())
       .catch((error: unknown) => {
         console.error('Database initialization failed:', error);
       })
