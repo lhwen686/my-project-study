@@ -11,7 +11,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 
-import { RichTextRenderer } from '@/components/rich-text-renderer';
+import { RichTextRenderer } from '@/components/RichTextRenderer';
 import { type OcclusionRect, parseOcclusions, pickRandomOcclusion, toAbsoluteRect } from '@/data/occlusion';
 import { Card, getTodayDueCardsByDeckId, reviewCard } from '@/data/sqlite';
 import { rescheduleDailyReminder } from '@/services/notifications';
