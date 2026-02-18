@@ -170,8 +170,11 @@ function buildHtmlDocument(source: string, variant: RichTextVariant): string {
   let n = 0;
 
   // Step 1 — display math  $$...$$  (must precede inline pass)
+  // NOTE: placeholders use %% delimiters, NOT null bytes (\u0000).
+  // markdown-it normalises \u0000 → \uFFFD per CommonMark spec, which
+  // would silently corrupt the tokens and prevent Step 4 restoration.
   let src = source.replace(/\$\$([\s\S]+?)\$\$/g, (_m, tex: string) => {
-    const id = `\u0000DMATH${n++}\u0000`;
+    const id = `%%DMATH${n++}%%`;
     try {
       slots.push({
         id,
@@ -189,7 +192,7 @@ function buildHtmlDocument(source: string, variant: RichTextVariant): string {
 
   // Step 2 — inline math  $...$  (negative look-around guards against $$)
   src = src.replace(/(?<!\$)\$([^$\n]+?)\$(?!\$)/g, (_m, tex: string) => {
-    const id = `\u0000IMATH${n++}\u0000`;
+    const id = `%%IMATH${n++}%%`;
     try {
       slots.push({
         id,
@@ -210,8 +213,9 @@ function buildHtmlDocument(source: string, variant: RichTextVariant): string {
 
   // Step 4 — restore KaTeX HTML (placeholder may be wrapped in <p>...</p>)
   for (const { id, html } of slots) {
-    const escaped = id.replace(/\u0000/g, '\\u0000').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    body = body.replace(new RegExp(`<p>${escaped}</p>`), html);
+    // Escape for use in RegExp (only %% and alphanumerics, but be safe)
+    const escaped = id.replace(/[.*+?^${}()|[\]\\%]/g, '\\$&');
+    body = body.replace(new RegExp(`<p>\\s*${escaped}\\s*</p>`), html);
     body = body.replace(id, html);
   }
 
