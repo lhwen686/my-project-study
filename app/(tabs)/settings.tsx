@@ -1,19 +1,17 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
-import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { z } from 'zod';
 
 import {
   ExportPayload,
   clearAllData,
   exportAllData,
-  getReminderSettings,
   getTodayDueCount,
   importAllData,
   initializeDatabase,
 } from '@/data/sqlite';
-import { ensureReminderPermissions, updateReminderSettings } from '@/services/notifications';
 import { CardShadow, Palette, Radius, Spacing } from '@/constants/design-tokens';
 
 const payloadSchema = z.object({
@@ -56,38 +54,6 @@ async function fs() {
 export default function SettingsScreen() {
   const [status, setStatus] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [enabled, setEnabled] = useState(false);
-  const [hour, setHour] = useState('21');
-  const [minute, setMinute] = useState('30');
-  const [onCompleted, setOnCompleted] = useState<'skip' | 'completed'>('skip');
-
-  useEffect(() => {
-    getReminderSettings().then((s) => {
-      setEnabled(s.enabled);
-      setHour(String(s.hour));
-      setMinute(String(s.minute));
-      setOnCompleted(s.onCompleted);
-    });
-  }, []);
-
-  const saveReminder = async () => {
-    const h = Number(hour);
-    const m = Number(minute);
-    if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) {
-      setStatus('提醒时间格式错误，请输入 0-23 和 0-59');
-      return;
-    }
-
-    const granted = await ensureReminderPermissions();
-    if (enabled && !granted) {
-      setStatus('未获得通知权限，无法开启提醒');
-      return;
-    }
-
-    await updateReminderSettings({ enabled, hour: h, minute: m, onCompleted });
-    setStatus(`提醒设置已保存：${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-  };
-
   const handleExport = async () => {
     if (isLoading) return;
     setIsLoading(true);
@@ -161,32 +127,6 @@ export default function SettingsScreen() {
       <Text style={styles.title}>数据管理</Text>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>每日提醒</Text>
-        <View style={styles.rowBetween}>
-          <Text style={styles.label}>开启提醒</Text>
-          <Switch value={enabled} onValueChange={setEnabled} thumbColor={Palette.surface} trackColor={{ true: Palette.primary, false: Palette.border }} />
-        </View>
-        <View style={styles.row}>
-          <TextInput style={styles.timeInput} keyboardType="number-pad" value={hour} onChangeText={setHour} placeholder="21" placeholderTextColor={Palette.textTertiary} />
-          <Text style={styles.timeSeparator}>:</Text>
-          <TextInput style={styles.timeInput} keyboardType="number-pad" value={minute} onChangeText={setMinute} placeholder="30" placeholderTextColor={Palette.textTertiary} />
-        </View>
-        <View style={styles.row}>
-          <Pressable style={onCompleted === 'skip' ? styles.primary : styles.secondary} onPress={() => setOnCompleted('skip')}>
-            <Text style={styles.btnText}>当天完成则不提醒</Text>
-          </Pressable>
-          <Pressable
-            style={onCompleted === 'completed' ? styles.primary : styles.secondary}
-            onPress={() => setOnCompleted('completed')}>
-            <Text style={styles.btnText}>改为"已完成✅"</Text>
-          </Pressable>
-        </View>
-        <Pressable style={styles.primary} onPress={saveReminder}>
-          <Text style={styles.btnText}>保存提醒设置</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.card}>
         <Text style={styles.cardTitle}>导出 JSON 并分享</Text>
         <Pressable style={[styles.primary, isLoading && styles.disabled]} onPress={handleExport} disabled={isLoading}>
           <Text style={styles.btnText}>导出全量数据</Text>
@@ -242,36 +182,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Palette.textPrimary,
   },
-  label: {
-    fontSize: 15,
-    color: Palette.textPrimary,
-  },
   row: {
     flexDirection: 'row',
     gap: 8,
     alignItems: 'center',
     flexWrap: 'wrap',
-  },
-  rowBetween: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  timeInput: {
-    backgroundColor: Palette.background,
-    borderColor: Palette.border,
-    borderRadius: Radius.input,
-    borderWidth: 1,
-    minWidth: 56,
-    padding: 10,
-    fontSize: 16,
-    color: Palette.textPrimary,
-    textAlign: 'center',
-  },
-  timeSeparator: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Palette.textSecondary,
   },
   primary: {
     backgroundColor: Palette.primary,

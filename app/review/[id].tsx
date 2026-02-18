@@ -3,19 +3,27 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  LayoutAnimation,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  UIManager,
   View,
   type LayoutChangeEvent,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
 import { RichTextRenderer } from '@/components/RichTextRenderer';
 import { type OcclusionRect, parseOcclusions, pickRandomOcclusion, toAbsoluteRect } from '@/data/occlusion';
 import { Card, getTodayDueCardsByDeckId, reviewCard } from '@/data/sqlite';
-import { rescheduleDailyReminder } from '@/services/notifications';
 import { CardShadow, CardShadowHeavy, Palette, Spacing } from '@/constants/design-tokens';
+
+// Enable LayoutAnimation on Android (defensive — newArchEnabled should handle it)
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const RATING_OPTIONS = [
   { label: '会', value: 5, style: 'good' as const },
@@ -38,9 +46,58 @@ export default function ReviewScreen() {
   const [imageBoxSize, setImageBoxSize] = useState({ width: 1, height: IMAGE_HEIGHT });
   const [questionMask, setQuestionMask] = useState<OcclusionRect | null>(null);
 
-  const currentCard = cards[index] ?? null;
-  const finished = !loading && cards.length > 0 && index >= cards.length;
-  const emptyDue = !loading && cards.length === 0;
+  // ── Mock: Hardy-Weinberg genetics card ──────────────────────────────
+  const currentCard: Card = {
+    id: 9999,
+    deck_id: deckId,
+    front: [
+      '## Hardy-Weinberg Equilibrium',
+      '',
+      '> In population genetics, the **Hardy-Weinberg principle** states that allele and genotype frequencies remain constant in a population across generations in the absence of other evolutionary influences.',
+      '',
+      'Given a two-allele system with frequencies $p$ and $q$, derive the equilibrium equation.',
+      '',
+      '**Hint:** Consider that $p + q = 1$ and expand $(p + q)^2$.',
+    ].join('\n'),
+    back: [
+      '### Derivation',
+      '',
+      'Starting from the allele frequencies:',
+      '',
+      '$$p + q = 1$$',
+      '',
+      'Squaring both sides:',
+      '',
+      '$$(p + q)^2 = 1$$',
+      '',
+      'Expanding:',
+      '',
+      '$$p^2 + 2pq + q^2 = 1$$',
+      '',
+      'Where:',
+      '- $p^2$ = frequency of **homozygous dominant** genotype (AA)',
+      '- $2pq$ = frequency of **heterozygous** genotype (Aa)',
+      '- $q^2$ = frequency of **homozygous recessive** genotype (aa)',
+      '',
+      '> This is the **Hardy-Weinberg equilibrium equation**, fundamental to population genetics.',
+      '',
+      '**Example:** If $q = 0.3$, then:',
+      '- $q^2 = 0.09$ (9% homozygous recessive)',
+      '- $p = 0.7$, so $p^2 = 0.49$ (49% homozygous dominant)',
+      '- $2pq = 0.42$ (42% heterozygous)',
+    ].join('\n'),
+    tags: 'genetics;population-genetics;hardy-weinberg',
+    image_uri: null,
+    occlusions: null,
+    repetition: 0,
+    interval_days: 0,
+    ease_factor: 2.5,
+    due_date: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+  };
+  const finished = false;
+  const emptyDue = false;
+  // ── End mock ────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!Number.isFinite(deckId)) {
@@ -56,7 +113,6 @@ export default function ReviewScreen() {
         setIndex(0);
         setShowBack(false);
         setShownAt(Date.now());
-        await rescheduleDailyReminder();
       } catch (error) {
         console.error('Failed to load due cards:', error);
         setCards([]);
@@ -90,6 +146,15 @@ export default function ReviewScreen() {
   const onGrade = async (rating: number) => {
     if (!currentCard || submitting) return;
 
+    // Haptic feedback based on rating
+    if (rating === 5) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else if (rating === 1) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+
     setSubmitting(true);
     try {
       const durationSeconds = Math.max(1, Math.round((Date.now() - shownAt) / 1000));
@@ -97,7 +162,6 @@ export default function ReviewScreen() {
       setIndex((prev) => prev + 1);
       setShowBack(false);
       setShownAt(Date.now());
-      await rescheduleDailyReminder();
     } catch (error) {
       console.error('Failed to submit review result:', error);
     } finally {
@@ -194,7 +258,10 @@ export default function ReviewScreen() {
         {!showBack ? (
           <Pressable
             style={({ pressed }) => [styles.flipButton, pressed && styles.flipButtonPressed]}
-            onPress={() => setShowBack(true)}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setShowBack(true);
+            }}
           >
             <Text style={styles.flipButtonText}>显示答案</Text>
           </Pressable>
