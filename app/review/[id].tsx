@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -14,6 +14,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import { useSQLiteContext } from 'expo-sqlite';
 
@@ -40,6 +41,7 @@ export default function ReviewScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const deckId = Number(id);
   const db = useSQLiteContext();
+  const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [currentCard, setCurrentCard] = useState<Card | null>(null);
@@ -196,8 +198,17 @@ export default function ReviewScreen() {
     return (
       <View style={styles.center}>
         <View style={styles.doneCard}>
-          <Text style={styles.doneEmoji}>🎉</Text>
-          <Text style={styles.done}>今日复习全部完成！</Text>
+          <View style={styles.doneIconCircle}>
+            <MaterialIcons name="check-circle" size={64} color={Palette.success} />
+          </View>
+          <Text style={styles.doneTitle}>今日复习全部完成！</Text>
+          <Text style={styles.doneSubtitle}>太棒了，你的记忆突触正在不断巩固。</Text>
+          <Pressable
+            style={({ pressed }) => [styles.doneButton, pressed && styles.doneButtonPressed]}
+            onPress={() => router.replace('/')}
+          >
+            <Text style={styles.doneButtonText}>返回主页</Text>
+          </Pressable>
         </View>
       </View>
     );
@@ -419,21 +430,46 @@ const styles = StyleSheet.create({
   // ── Empty / Done states ─────────────────────────────────────────────────────
   message: { color: '#64748B', fontSize: 16, textAlign: 'center' },
   doneCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Palette.surface,
     borderRadius: 16,
     padding: 40,
     alignItems: 'center',
+    width: '100%',
     ...CardShadow,
   },
-  doneEmoji: {
-    fontSize: 52,
+  doneIconCircle: {
     marginBottom: 16,
   },
-  done: {
-    color: Palette.primary,
-    fontSize: 20,
+  doneTitle: {
+    color: Palette.textPrimary,
+    fontSize: 22,
     fontWeight: '700',
     textAlign: 'center',
+    marginBottom: 8,
+  },
+  doneSubtitle: {
+    color: Palette.textSecondary,
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  doneButton: {
+    backgroundColor: Palette.primary,
+    borderRadius: 28,
+    paddingHorizontal: 36,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...CardShadow,
+  },
+  doneButtonPressed: {
+    opacity: 0.85,
+  },
+  doneButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
 
   // ── Image / Occlusion ─────────────────────────────────────────────────────
