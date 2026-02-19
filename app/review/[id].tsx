@@ -19,6 +19,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 
 import { RichTextRenderer } from '@/components/RichTextRenderer';
 import { type OcclusionRect, parseOcclusions, pickRandomOcclusion, toAbsoluteRect } from '@/data/occlusion';
+import { calculateSm2 } from '@/data/sm2';
 import { type Card } from '@/data/sqlite';
 import { CardShadow, CardShadowHeavy, Palette, Spacing } from '@/constants/design-tokens';
 
@@ -125,9 +126,38 @@ export default function ReviewScreen() {
 
     setSubmitting(true);
     try {
-      // Simple scheduling: push due_date forward by 1 day
-      const nextReviewDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      await db.runAsync('UPDATE cards SET due_date = ? WHERE id = ?;', nextReviewDate, currentCard.id);
+      const now = new Date();
+      const durationSeconds = Math.max(1, Math.round((Date.now() - shownAt) / 1000));
+
+      // SM-2 algorithm: compute new repetition, interval, ease factor, and due date
+      const sm2Result = calculateSm2(
+        {
+          repetition: currentCard.repetition,
+          intervalDays: currentCard.interval_days,
+          easeFactor: currentCard.ease_factor,
+        },
+        rating,
+        now,
+      );
+
+      // Atomic transaction: insert review record + update card SM-2 fields
+      await db.withTransactionAsync(async () => {
+        await db.runAsync(
+          'INSERT INTO reviews (card_id, reviewed_at, rating, duration_seconds) VALUES (?, ?, ?, ?);',
+          currentCard.id,
+          now.toISOString(),
+          rating,
+          durationSeconds,
+        );
+        await db.runAsync(
+          'UPDATE cards SET repetition = ?, interval_days = ?, ease_factor = ?, due_date = ? WHERE id = ?;',
+          sm2Result.repetition,
+          sm2Result.intervalDays,
+          sm2Result.easeFactor,
+          sm2Result.dueDate,
+          currentCard.id,
+        );
+      });
 
       setCompleted((prev) => prev + 1);
       setShowBack(false);
