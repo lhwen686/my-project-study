@@ -200,6 +200,45 @@ export async function initializeDatabase() {
       }
     });
   }
+
+  await seedInitialCards();
+}
+
+const medicalSeedCards = [
+  {
+    front: '哈迪-温伯格定律（Hardy-Weinberg）公式',
+    back: '在理想群体中，等位基因频率和基因型频率代代保持不变。\n\n设等位基因频率 p（显性A）和 q（隐性a），则：\n%%p + q = 1%%\n%%p^2 + 2pq + q^2 = 1%%\n\n其中 %%p^2%% = AA频率，%%2pq%% = Aa频率，%%q^2%% = aa频率。\n\n五个前提条件：群体足够大、随机交配、无突变、无选择、无迁移。',
+  },
+  {
+    front: 'PD-L1 在肿瘤免疫逃逸中的核心机制',
+    back: 'PD-L1（程序性死亡配体1）是肿瘤细胞表面高表达的免疫检查点分子。\n\n核心机制：\n1. 肿瘤细胞上调 PD-L1 表达\n2. PD-L1 与 T 细胞表面的 PD-1 受体结合\n3. 传递抑制信号，导致 T 细胞耗竭（exhaustion）\n4. T 细胞增殖受阻、细胞因子分泌减少、杀伤功能丧失\n\n临床应用：抗 PD-1/PD-L1 单抗（如 pembrolizumab、nivolumab）可阻断该通路，恢复 T 细胞抗肿瘤活性。',
+  },
+  {
+    front: '人体腕骨的八块骨头名称及口诀',
+    back: '腕骨共 8 块，分近侧列和远侧列各 4 块：\n\n近侧列（桡→尺）：舟骨、月骨、三角骨、豌豆骨\n远侧列（桡→尺）：大多角骨、小多角骨、头状骨、钩骨\n\n记忆口诀：「舟月三角豌豆大小头状钩」\n\n助记：舟（船）月（亮）三（角）碗（豌）豆，大小头（状）钩（子）。',
+  },
+];
+
+export async function seedInitialCards() {
+  const db = await getDb();
+  const cardCount = (await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM cards;'))?.count ?? 0;
+  if (cardCount > 0) return;
+
+  const now = new Date().toISOString();
+  await db.withTransactionAsync(async () => {
+    const deckResult = await db.runAsync(
+      'INSERT INTO decks (name, description) VALUES (?, ?);',
+      '医学/生物学',
+      '医学与生物学核心考点复习卡',
+    );
+    const deckId = deckResult.lastInsertRowId;
+    for (const card of medicalSeedCards) {
+      await db.runAsync(
+        'INSERT INTO cards (deck_id, front, back, image_uri, occlusions, repetition, interval_days, ease_factor, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);',
+        deckId, card.front, card.back, null, null, 0, 0, 2.5, now,
+      );
+    }
+  });
 }
 
 export async function clearAllData() {
