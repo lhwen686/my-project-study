@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -15,9 +15,11 @@ import {
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
+import { useSQLiteContext } from 'expo-sqlite';
+
 import { RichTextRenderer } from '@/components/RichTextRenderer';
 import { type OcclusionRect, parseOcclusions, pickRandomOcclusion, toAbsoluteRect } from '@/data/occlusion';
-import { Card, getTodayDueCardsByDeckId, reviewCard } from '@/data/sqlite';
+import { type Card } from '@/data/sqlite';
 import { CardShadow, CardShadowHeavy, Palette, Spacing } from '@/constants/design-tokens';
 
 // Enable LayoutAnimation on Android (defensive — newArchEnabled should handle it)
@@ -36,68 +38,27 @@ const IMAGE_HEIGHT = 220;
 export default function ReviewScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const deckId = Number(id);
+  const db = useSQLiteContext();
 
   const [loading, setLoading] = useState(true);
-  const [cards, setCards] = useState<Card[]>([]);
-  const [index, setIndex] = useState(0);
+  const [currentCard, setCurrentCard] = useState<Card | null>(null);
+  const [totalDue, setTotalDue] = useState(0);
+  const [completed, setCompleted] = useState(0);
   const [showBack, setShowBack] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [shownAt, setShownAt] = useState<number>(Date.now());
   const [imageBoxSize, setImageBoxSize] = useState({ width: 1, height: IMAGE_HEIGHT });
   const [questionMask, setQuestionMask] = useState<OcclusionRect | null>(null);
 
-  // ── Mock: Hardy-Weinberg genetics card ──────────────────────────────
-  const currentCard: Card = {
-    id: 9999,
-    deck_id: deckId,
-    front: [
-      '## Hardy-Weinberg Equilibrium',
-      '',
-      '> In population genetics, the **Hardy-Weinberg principle** states that allele and genotype frequencies remain constant in a population across generations in the absence of other evolutionary influences.',
-      '',
-      'Given a two-allele system with frequencies $p$ and $q$, derive the equilibrium equation.',
-      '',
-      '**Hint:** Consider that $p + q = 1$ and expand $(p + q)^2$.',
-    ].join('\n'),
-    back: [
-      '### Derivation',
-      '',
-      'Starting from the allele frequencies:',
-      '',
-      '$$p + q = 1$$',
-      '',
-      'Squaring both sides:',
-      '',
-      '$$(p + q)^2 = 1$$',
-      '',
-      'Expanding:',
-      '',
-      '$$p^2 + 2pq + q^2 = 1$$',
-      '',
-      'Where:',
-      '- $p^2$ = frequency of **homozygous dominant** genotype (AA)',
-      '- $2pq$ = frequency of **heterozygous** genotype (Aa)',
-      '- $q^2$ = frequency of **homozygous recessive** genotype (aa)',
-      '',
-      '> This is the **Hardy-Weinberg equilibrium equation**, fundamental to population genetics.',
-      '',
-      '**Example:** If $q = 0.3$, then:',
-      '- $q^2 = 0.09$ (9% homozygous recessive)',
-      '- $p = 0.7$, so $p^2 = 0.49$ (49% homozygous dominant)',
-      '- $2pq = 0.42$ (42% heterozygous)',
-    ].join('\n'),
-    tags: 'genetics;population-genetics;hardy-weinberg',
-    image_uri: null,
-    occlusions: null,
-    repetition: 0,
-    interval_days: 0,
-    ease_factor: 2.5,
-    due_date: new Date().toISOString(),
-    created_at: new Date().toISOString(),
-  };
-  const finished = false;
-  const emptyDue = false;
-  // ── End mock ────────────────────────────────────────────────────────
+  const loadNextDueCard = useCallback(async () => {
+    const now = new Date().toISOString();
+    const card = await db.getFirstAsync<Card>(
+      'SELECT * FROM cards WHERE deck_id = ? AND due_date <= ? ORDER BY due_date ASC, id ASC LIMIT 1;',
+      deckId,
+      now,
+    );
+    setCurrentCard(card ?? null);
+  }, [db, deckId]);
 
   useEffect(() => {
     if (!Number.isFinite(deckId)) {
@@ -108,21 +69,28 @@ export default function ReviewScreen() {
     const load = async () => {
       setLoading(true);
       try {
-        const dueCards = await getTodayDueCardsByDeckId(deckId);
-        setCards(dueCards);
-        setIndex(0);
+        const now = new Date().toISOString();
+        const countResult = await db.getFirstAsync<{ count: number }>(
+          'SELECT COUNT(*) as count FROM cards WHERE deck_id = ? AND due_date <= ?;',
+          deckId,
+          now,
+        );
+        setTotalDue(countResult?.count ?? 0);
+        setCompleted(0);
+        await loadNextDueCard();
         setShowBack(false);
         setShownAt(Date.now());
       } catch (error) {
         console.error('Failed to load due cards:', error);
-        setCards([]);
+        setCurrentCard(null);
+        setTotalDue(0);
       } finally {
         setLoading(false);
       }
     };
 
     load();
-  }, [deckId]);
+  }, [deckId, db, loadNextDueCard]);
 
   useEffect(() => {
     if (!currentCard) {
@@ -134,14 +102,14 @@ export default function ReviewScreen() {
   }, [currentCard]);
 
   const progressText = useMemo(() => {
-    if (cards.length === 0) return '0 / 0';
-    return `${Math.min(index + 1, cards.length)} / ${cards.length}`;
-  }, [cards.length, index]);
+    if (totalDue === 0) return '0 / 0';
+    return `${Math.min(completed + 1, totalDue)} / ${totalDue}`;
+  }, [totalDue, completed]);
 
   const progressPercent = useMemo(() => {
-    if (cards.length === 0) return 0;
-    return (Math.min(index + 1, cards.length) / cards.length) * 100;
-  }, [cards.length, index]);
+    if (totalDue === 0) return 0;
+    return (Math.min(completed + 1, totalDue) / totalDue) * 100;
+  }, [totalDue, completed]);
 
   const onGrade = async (rating: number) => {
     if (!currentCard || submitting) return;
@@ -157,11 +125,14 @@ export default function ReviewScreen() {
 
     setSubmitting(true);
     try {
-      const durationSeconds = Math.max(1, Math.round((Date.now() - shownAt) / 1000));
-      await reviewCard(currentCard.id, rating, new Date(), durationSeconds);
-      setIndex((prev) => prev + 1);
+      // Simple scheduling: push due_date forward by 1 day
+      const nextReviewDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      await db.runAsync('UPDATE cards SET due_date = ? WHERE id = ?;', nextReviewDate, currentCard.id);
+
+      setCompleted((prev) => prev + 1);
       setShowBack(false);
       setShownAt(Date.now());
+      await loadNextDueCard();
     } catch (error) {
       console.error('Failed to submit review result:', error);
     } finally {
@@ -191,7 +162,7 @@ export default function ReviewScreen() {
     );
   }
 
-  if (emptyDue || finished) {
+  if (!currentCard) {
     return (
       <View style={styles.center}>
         <View style={styles.doneCard}>
