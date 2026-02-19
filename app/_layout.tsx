@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import 'react-native-reanimated';
 
+import { SQLiteProvider } from 'expo-sqlite';
+
 import { initializeDatabase } from '@/data/sqlite';
 import { Palette } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -32,11 +34,13 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="deck/[id]" options={{ title: '卡片列表' }} />
-        <Stack.Screen name="review/[id]" options={{ title: '复习界面' }} />
-      </Stack>
+      <SQLiteProvider databaseName="review-app.db">
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="deck/[id]" options={{ title: '卡片列表' }} />
+          <Stack.Screen name="review/[id]" options={{ title: '复习界面' }} />
+        </Stack>
+      </SQLiteProvider>
       <StatusBar style="auto" />
     </ThemeProvider>
   );
