@@ -9,6 +9,7 @@ import { SQLiteProvider } from 'expo-sqlite';
 import { initDB, DB_NAME } from '@/data/db';
 import { Palette } from '@/constants/design-tokens';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useNotifications } from '@/hooks/use-notifications';
 
 function Loading() {
   return (
@@ -21,6 +22,7 @@ function Loading() {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  useNotifications();
 
   return (
     <Suspense fallback={<Loading />}>
