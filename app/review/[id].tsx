@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -14,11 +14,13 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import { useSQLiteContext } from 'expo-sqlite';
 
 import { RichTextRenderer } from '@/components/RichTextRenderer';
 import { type OcclusionRect, parseOcclusions, pickRandomOcclusion, toAbsoluteRect } from '@/data/occlusion';
+import { calculateSm2 } from '@/data/sm2';
 import { type Card } from '@/data/sqlite';
 import { CardShadow, CardShadowHeavy, Palette, Spacing } from '@/constants/design-tokens';
 
@@ -39,6 +41,7 @@ export default function ReviewScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const deckId = Number(id);
   const db = useSQLiteContext();
+  const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [currentCard, setCurrentCard] = useState<Card | null>(null);
@@ -125,9 +128,38 @@ export default function ReviewScreen() {
 
     setSubmitting(true);
     try {
-      // Simple scheduling: push due_date forward by 1 day
-      const nextReviewDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      await db.runAsync('UPDATE cards SET due_date = ? WHERE id = ?;', nextReviewDate, currentCard.id);
+      const now = new Date();
+      const durationSeconds = Math.max(1, Math.round((Date.now() - shownAt) / 1000));
+
+      // SM-2 algorithm: compute new repetition, interval, ease factor, and due date
+      const sm2Result = calculateSm2(
+        {
+          repetition: currentCard.repetition,
+          intervalDays: currentCard.interval_days,
+          easeFactor: currentCard.ease_factor,
+        },
+        rating,
+        now,
+      );
+
+      // Atomic transaction: insert review record + update card SM-2 fields
+      await db.withTransactionAsync(async () => {
+        await db.runAsync(
+          'INSERT INTO reviews (card_id, reviewed_at, rating, duration_seconds) VALUES (?, ?, ?, ?);',
+          currentCard.id,
+          now.toISOString(),
+          rating,
+          durationSeconds,
+        );
+        await db.runAsync(
+          'UPDATE cards SET repetition = ?, interval_days = ?, ease_factor = ?, due_date = ? WHERE id = ?;',
+          sm2Result.repetition,
+          sm2Result.intervalDays,
+          sm2Result.easeFactor,
+          sm2Result.dueDate,
+          currentCard.id,
+        );
+      });
 
       setCompleted((prev) => prev + 1);
       setShowBack(false);
@@ -166,8 +198,17 @@ export default function ReviewScreen() {
     return (
       <View style={styles.center}>
         <View style={styles.doneCard}>
-          <Text style={styles.doneEmoji}>🎉</Text>
-          <Text style={styles.done}>今日复习全部完成！</Text>
+          <View style={styles.doneIconCircle}>
+            <MaterialIcons name="check-circle" size={64} color={Palette.success} />
+          </View>
+          <Text style={styles.doneTitle}>今日复习全部完成！</Text>
+          <Text style={styles.doneSubtitle}>太棒了，你的记忆突触正在不断巩固。</Text>
+          <Pressable
+            style={({ pressed }) => [styles.doneButton, pressed && styles.doneButtonPressed]}
+            onPress={() => router.replace('/')}
+          >
+            <Text style={styles.doneButtonText}>返回主页</Text>
+          </Pressable>
         </View>
       </View>
     );
@@ -389,21 +430,46 @@ const styles = StyleSheet.create({
   // ── Empty / Done states ─────────────────────────────────────────────────────
   message: { color: '#64748B', fontSize: 16, textAlign: 'center' },
   doneCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Palette.surface,
     borderRadius: 16,
     padding: 40,
     alignItems: 'center',
+    width: '100%',
     ...CardShadow,
   },
-  doneEmoji: {
-    fontSize: 52,
+  doneIconCircle: {
     marginBottom: 16,
   },
-  done: {
-    color: Palette.primary,
-    fontSize: 20,
+  doneTitle: {
+    color: Palette.textPrimary,
+    fontSize: 22,
     fontWeight: '700',
     textAlign: 'center',
+    marginBottom: 8,
+  },
+  doneSubtitle: {
+    color: Palette.textSecondary,
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  doneButton: {
+    backgroundColor: Palette.primary,
+    borderRadius: 28,
+    paddingHorizontal: 36,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...CardShadow,
+  },
+  doneButtonPressed: {
+    opacity: 0.85,
+  },
+  doneButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
 
   // ── Image / Occlusion ─────────────────────────────────────────────────────

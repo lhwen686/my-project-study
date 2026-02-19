@@ -91,7 +91,12 @@ function withLapseCount(card: Card): Card {
   return { ...card, lapse_count };
 }
 
-const medicalSeedCards = [
+const medicalSeedCards: Array<{
+  front: string;
+  back: string;
+  image_uri?: string;
+  occlusions?: string;
+}> = [
   {
     front: '哈迪-温伯格定律（Hardy-Weinberg）公式',
     back: '在理想群体中，等位基因频率和基因型频率代代保持不变。\n\n设等位基因频率 p（显性A）和 q（隐性a），则：\n%%p + q = 1%%\n%%p^2 + 2pq + q^2 = 1%%\n\n其中 %%p^2%% = AA频率，%%2pq%% = Aa频率，%%q^2%% = aa频率。\n\n五个前提条件：群体足够大、随机交配、无突变、无选择、无迁移。',
@@ -103,6 +108,16 @@ const medicalSeedCards = [
   {
     front: '人体腕骨的八块骨头名称及口诀',
     back: '腕骨共 8 块，分近侧列和远侧列各 4 块：\n\n近侧列（桡→尺）：舟骨、月骨、三角骨、豌豆骨\n远侧列（桡→尺）：大多角骨、小多角骨、头状骨、钩骨\n\n记忆口诀：「舟月三角豌豆大小头状钩」\n\n助记：舟（船）月（亮）三（角）碗（豌）豆，大小头（状）钩（子）。',
+  },
+  {
+    front: '【图像遮挡】左手腕骨解剖 — 指出被遮挡的骨骼名称',
+    back: '本卡片用于测试图像遮挡功能。\n\n图中标注了三块腕骨的位置：\n- **舟骨**（Scaphoid）：近侧列桡侧，最易骨折的腕骨\n- **月骨**（Lunate）：近侧列中央，脱位最常见\n- **头状骨**（Capitate）：远侧列中央，腕骨中最大的一块\n\n复习时系统会随机遮挡其中一块，请根据位置判断骨骼名称。',
+    image_uri: 'https://upload.wikimedia.org/wikipedia/commons/4/48/Gray219.png',
+    occlusions: JSON.stringify([
+      { x: 0.10, y: 0.55, width: 0.20, height: 0.15, label: '舟骨' },
+      { x: 0.35, y: 0.48, width: 0.18, height: 0.15, label: '月骨' },
+      { x: 0.35, y: 0.68, width: 0.20, height: 0.16, label: '头状骨' },
+    ]),
   },
 ];
 
@@ -143,8 +158,8 @@ export async function seedInitialCards() {
       front: card.front,
       back: card.back,
       tags: null,
-      image_uri: null,
-      occlusions: null,
+      image_uri: card.image_uri ?? null,
+      occlusions: card.occlusions ?? null,
       repetition: 0,
       interval_days: 0,
       ease_factor: 2.5,
