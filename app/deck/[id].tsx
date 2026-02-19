@@ -4,7 +4,11 @@ import {
   Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,9 +17,11 @@ import {
   type NativeSyntheticEvent,
   type TextInputSubmitEditingEventData,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { createOcclusionAtPoint, parseOcclusions, type OcclusionRect, toAbsoluteRect } from '@/data/occlusion';
-import { CardShadow, Palette, Radius, Spacing } from '@/constants/design-tokens';
+import { CardShadow, CardShadowHeavy, Palette, Radius, Spacing } from '@/constants/design-tokens';
 import { buildTemplatePreview, getTemplateFields, type TemplateKind } from '@/data/templates';
 import {
   Card,
@@ -38,6 +44,15 @@ const DEFAULT_CSV = `deck,front,back,tags
 
 const IMAGE_BOX_HEIGHT = 220;
 
+const TEMPLATE_OPTIONS: { key: TemplateKind; label: string }[] = [
+  { key: 'none', label: '手动' },
+  { key: 'anatomy', label: '解剖' },
+  { key: 'biochem', label: '生化' },
+  { key: 'custom', label: '自定义' },
+];
+
+// ─── Card List Item ───────────────────────────────────────────────────────────
+
 type CardItemProps = {
   card: Card;
   isSelected: boolean;
@@ -51,33 +66,40 @@ const CardItem = memo(function CardItem({ card, isSelected, onToggleSelect, onEd
   return (
     <View style={styles.card}>
       <View style={styles.rowBetween}>
-        <Text style={styles.front}>{card.front}</Text>
+        <Text style={styles.front} numberOfLines={2}>{card.front}</Text>
         <Pressable style={isSelected ? styles.selectedBadge : styles.unselectedBadge} onPress={() => onToggleSelect(card.id)}>
           <Text style={styles.badgeText}>{isSelected ? '已选' : '选择'}</Text>
         </Pressable>
       </View>
       {!!card.image_uri && <Image source={{ uri: card.image_uri }} style={styles.listThumb} resizeMode="cover" />}
-      <Text style={styles.back}>{card.back}</Text>
+      <Text style={styles.back} numberOfLines={3}>{card.back}</Text>
       <Text style={styles.meta}>tags: {card.tags || '-'} | lapse: {card.lapse_count ?? 0} | 遮挡: {marks.length}</Text>
       <View style={styles.row}>
         <Pressable style={styles.editBtn} onPress={() => onEdit(card)}>
-          <Text style={styles.buttonText}>编辑</Text>
+          <Text style={styles.btnTextWhite}>编辑</Text>
         </Pressable>
         <Pressable style={styles.deleteBtn} onPress={() => onDelete(card.id)}>
-          <Text style={styles.buttonText}>删除</Text>
+          <Text style={styles.btnTextWhite}>删除</Text>
         </Pressable>
       </View>
     </View>
   );
 });
 
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
 export default function DeckDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const deckId = Number(id);
 
+  // ── Core data ──────────────────────────────────────────────────────────────
   const [deck, setDeck] = useState<Deck | null>(null);
   const [allDecks, setAllDecks] = useState<Deck[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
+  const [message, setMessage] = useState('');
+
+  // ── Add / Edit form ────────────────────────────────────────────────────────
+  const [showAddModal, setShowAddModal] = useState(false);
   const [front, setFront] = useState('');
   const [back, setBack] = useState('');
   const [tags, setTags] = useState('');
@@ -86,23 +108,30 @@ export default function DeckDetailScreen() {
   const [occlusionLabel, setOcclusionLabel] = useState('');
   const [imageBoxSize, setImageBoxSize] = useState({ width: 1, height: IMAGE_BOX_HEIGHT });
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [csvText, setCsvText] = useState(DEFAULT_CSV);
-  const [message, setMessage] = useState('');
 
+  // ── Templates ──────────────────────────────────────────────────────────────
   const [templateKind, setTemplateKind] = useState<TemplateKind>('none');
   const [customTemplateFieldsInput, setCustomTemplateFieldsInput] = useState('问题,答案');
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({});
 
+  // ── Search / Filter ────────────────────────────────────────────────────────
   const [queryInput, setQueryInput] = useState('');
   const [query, setQuery] = useState('');
   const [onlyDue, setOnlyDue] = useState(false);
   const [onlyLapse, setOnlyLapse] = useState(false);
   const [tagFilter, setTagFilter] = useState('');
 
+  // ── Batch operations ───────────────────────────────────────────────────────
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [targetDeckId, setTargetDeckId] = useState('');
   const [batchTag, setBatchTag] = useState('');
+  const [showBatchModal, setShowBatchModal] = useState(false);
 
+  // ── CSV Import ─────────────────────────────────────────────────────────────
+  const [showCsvModal, setShowCsvModal] = useState(false);
+  const [csvText, setCsvText] = useState(DEFAULT_CSV);
+
+  // ── Data loading ───────────────────────────────────────────────────────────
   const loadDeckDetail = useCallback(async () => {
     if (!Number.isFinite(deckId)) return;
     try {
@@ -131,6 +160,7 @@ export default function DeckDetailScreen() {
     return () => clearTimeout(t);
   }, [message]);
 
+  // ── Computed ───────────────────────────────────────────────────────────────
   const templateFields = useMemo(
     () => getTemplateFields(templateKind, customTemplateFieldsInput),
     [templateKind, customTemplateFieldsInput],
@@ -144,19 +174,20 @@ export default function DeckDetailScreen() {
   const filteredCards = useMemo(() => {
     const nowIso = new Date().toISOString();
     const tagNeedle = tagFilter.trim().toLowerCase();
-
     return cards.filter((c) => {
       if (onlyDue && c.due_date > nowIso) return false;
       if (onlyLapse && (c.lapse_count ?? 0) <= 0) return false;
       if (tagNeedle && !(c.tags ?? '').toLowerCase().split(';').map((x) => x.trim()).includes(tagNeedle)) return false;
-
       if (!query) return true;
       const hay = `${c.front}\n${c.back}\n${c.tags ?? ''}`.toLowerCase();
       return hay.includes(query);
     });
   }, [cards, onlyDue, onlyLapse, query, tagFilter]);
 
-  const resetForm = () => {
+  const selectedIds = useMemo(() => [...selected], [selected]);
+
+  // ── Form helpers ───────────────────────────────────────────────────────────
+  const resetForm = useCallback(() => {
     setFront('');
     setBack('');
     setTags('');
@@ -166,7 +197,24 @@ export default function DeckDetailScreen() {
     setTemplateKind('none');
     setTemplateValues({});
     setEditingId(null);
-  };
+  }, []);
+
+  const openAddModal = useCallback(() => {
+    resetForm();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowAddModal(true);
+  }, [resetForm]);
+
+  const closeAddModal = useCallback(() => {
+    setShowAddModal(false);
+    resetForm();
+  }, [resetForm]);
+
+  const switchTemplate = useCallback((kind: TemplateKind) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTemplateKind(kind);
+    setTemplateValues({});
+  }, []);
 
   const applyTemplateToCard = () => {
     if (templateKind === 'none') return;
@@ -176,6 +224,7 @@ export default function DeckDetailScreen() {
 
   const onSubmit = async () => {
     if (!front.trim() || !back.trim() || !Number.isFinite(deckId)) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const occlusionPayload = occlusions.length > 0 ? JSON.stringify(occlusions) : undefined;
     if (editingId) {
       await updateCard(editingId, front.trim(), back.trim(), tags.trim() || undefined, imageUri.trim() || undefined, occlusionPayload);
@@ -185,6 +234,7 @@ export default function DeckDetailScreen() {
       setMessage('已新增卡片');
     }
     resetForm();
+    setShowAddModal(false);
     await loadDeckDetail();
   };
 
@@ -197,6 +247,7 @@ export default function DeckDetailScreen() {
     setOcclusions(parseOcclusions(card.occlusions));
     setTemplateKind('none');
     setTemplateValues({});
+    setShowAddModal(true);
   }, []);
 
   const onDelete = useCallback(async (cardId: number) => {
@@ -205,10 +256,12 @@ export default function DeckDetailScreen() {
     await loadDeckDetail();
   }, [loadDeckDetail]);
 
+  // ── CSV Import ─────────────────────────────────────────────────────────────
   const onImport = async () => {
     try {
       const count = await importCardsFromCsv(csvText);
       setMessage(`CSV 导入成功：${count} 张`);
+      setShowCsvModal(false);
       await loadDeckDetail();
     } catch (error) {
       console.error(error);
@@ -216,6 +269,7 @@ export default function DeckDetailScreen() {
     }
   };
 
+  // ── Occlusion handlers ─────────────────────────────────────────────────────
   const onImageBoxLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     if (width > 0 && height > 0) setImageBoxSize({ width, height });
@@ -234,6 +288,7 @@ export default function DeckDetailScreen() {
     setOcclusions((prev) => prev.map((o, idx) => (idx === prev.length - 1 ? { ...o, label } : o)));
   };
 
+  // ── Batch operations ───────────────────────────────────────────────────────
   const toggleSelect = useCallback((cardId: number) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -242,8 +297,6 @@ export default function DeckDetailScreen() {
       return next;
     });
   }, []);
-
-  const selectedIds = [...selected];
 
   const runBulkDelete = async () => {
     if (selectedIds.length === 0) return;
@@ -267,6 +320,8 @@ export default function DeckDetailScreen() {
     if (!Number.isFinite(target) || selectedIds.length === 0) return;
     await bulkMoveCards(selectedIds, target);
     setSelected(new Set());
+    setShowBatchModal(false);
+    setTargetDeckId('');
     setMessage(`已移动 ${selectedIds.length} 张卡片到 deck ${target}`);
     await loadDeckDetail();
   };
@@ -275,237 +330,656 @@ export default function DeckDetailScreen() {
     if (!batchTag.trim() || selectedIds.length === 0) return;
     await bulkAddTag(selectedIds, batchTag.trim());
     setSelected(new Set());
+    setShowBatchModal(false);
+    setBatchTag('');
     setMessage(`已给 ${selectedIds.length} 张卡片添加标签 ${batchTag.trim()}`);
     await loadDeckDetail();
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Render
+  // ═══════════════════════════════════════════════════════════════════════════
+
   return (
-    <FlatList
-      data={filteredCards}
-      keyExtractor={(item) => String(item.id)}
-      contentContainerStyle={styles.container}
-      initialNumToRender={20}
-      windowSize={11}
-      removeClippedSubviews
-      ListHeaderComponent={
-        <>
-          <Text style={styles.title}>DeckDetail · 卡片列表</Text>
-          <Text style={styles.subtitle}>科目：{deck?.name ?? id}</Text>
-          {!!message && <Text style={styles.message}>{message}</Text>}
+    <View style={styles.screen}>
+      {/* ─── Header ──────────────────────────────────────────────────────── */}
+      <View style={styles.header}>
+        <Text style={styles.title}>{deck?.name ?? `Deck ${id}`}</Text>
+        <Text style={styles.subtitle}>{filteredCards.length} 张卡片</Text>
+      </View>
 
-          <View style={styles.toolbar}>
-            <TextInput placeholder="搜索 front/back/tags" value={queryInput} onChangeText={setQueryInput} style={styles.input} />
-            <View style={styles.row}>
-              <Pressable style={onlyDue ? styles.primaryButton : styles.secondaryButton} onPress={() => setOnlyDue((v) => !v)}>
-                <Text style={styles.buttonText}>仅 due</Text>
-              </Pressable>
-              <Pressable style={onlyLapse ? styles.primaryButton : styles.secondaryButton} onPress={() => setOnlyLapse((v) => !v)}>
-                <Text style={styles.buttonText}>仅 lapse≥1</Text>
-              </Pressable>
-            </View>
-            <TextInput placeholder="按标签筛选(如 math)" value={tagFilter} onChangeText={setTagFilter} style={styles.input} />
-          </View>
-
-          <View style={styles.formCard}>
-            <Text style={styles.formTitle}>{editingId ? '编辑卡片' : '新增卡片'}</Text>
-            <Text style={styles.sectionTitle}>模板化建卡</Text>
-            <View style={styles.row}>
-              <Pressable style={templateKind === 'none' ? styles.primaryButton : styles.secondaryButton} onPress={() => setTemplateKind('none')}>
-                <Text style={styles.buttonText}>手动</Text>
-              </Pressable>
-              <Pressable style={templateKind === 'anatomy' ? styles.primaryButton : styles.secondaryButton} onPress={() => setTemplateKind('anatomy')}>
-                <Text style={styles.buttonText}>解剖模板</Text>
-              </Pressable>
-              <Pressable style={templateKind === 'biochem' ? styles.primaryButton : styles.secondaryButton} onPress={() => setTemplateKind('biochem')}>
-                <Text style={styles.buttonText}>生化模板</Text>
-              </Pressable>
-              <Pressable style={templateKind === 'custom' ? styles.primaryButton : styles.secondaryButton} onPress={() => setTemplateKind('custom')}>
-                <Text style={styles.buttonText}>自定义模板</Text>
-              </Pressable>
-            </View>
-
-            {templateKind === 'custom' ? (
-              <TextInput
-                placeholder="自定义字段（逗号分隔）：如 主题,考点,易错点"
-                value={customTemplateFieldsInput}
-                onChangeText={setCustomTemplateFieldsInput}
-                style={styles.input}
-              />
-            ) : null}
-
-            {templateKind !== 'none'
-              ? templateFields.map((field) => (
-                  <TextInput
-                    key={field}
-                    placeholder={field}
-                    value={templateValues[field] ?? ''}
-                    onChangeText={(text) => setTemplateValues((prev) => ({ ...prev, [field]: text }))}
-                    style={styles.input}
-                  />
-                ))
-              : null}
-
-            {templateKind !== 'none' ? (
-              <>
-                <View style={styles.formCardMuted}>
-                  <Text style={styles.previewLabel}>front 预览</Text>
-                  <Text style={styles.previewText}>{templatePreview.front || '-'}</Text>
-                  <Text style={styles.previewLabel}>back 预览</Text>
-                  <Text style={styles.previewText}>{templatePreview.back || '-'}</Text>
-                </View>
-                <Pressable style={styles.primaryButton} onPress={applyTemplateToCard}>
-                  <Text style={styles.buttonText}>一键生成 front/back</Text>
-                </Pressable>
-              </>
-            ) : null}
-
-            <TextInput placeholder="front" value={front} onChangeText={setFront} style={styles.input} />
-            <TextInput placeholder="back" value={back} onChangeText={setBack} style={styles.input} />
-            <TextInput placeholder="tags (可选, ; 分隔)" value={tags} onChangeText={setTags} style={styles.input} />
-            <TextInput placeholder="image uri (本地路径或 asset uri)" value={imageUri} onChangeText={setImageUri} style={styles.input} />
-
-            {!!imageUri && (
-              <View style={styles.editorWrap}>
-                <Text style={styles.editorHint}>遮挡标注编辑器：点击图片添加矩形遮挡（支持≥5个）</Text>
-                <TextInput
-                  placeholder="给新遮挡块填写结构名（可选）"
-                  value={occlusionLabel}
-                  onChangeText={setOcclusionLabel}
-                  onSubmitEditing={applyLabelToLatest}
-                  style={styles.input}
-                />
-                <Pressable onPress={onPressImage} onLayout={onImageBoxLayout} style={styles.imagePressArea}>
-                  <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
-                  {occlusions.map((rect, idx) => {
-                    const abs = toAbsoluteRect(rect, imageBoxSize.width, imageBoxSize.height);
-                    return (
-                      <View key={`${idx}-${rect.x}`} style={[styles.occlusionRect, { left: abs.left, top: abs.top, width: abs.width, height: abs.height }]}>
-                        <Text style={styles.occlusionText}>{rect.label || `#${idx + 1}`}</Text>
-                      </View>
-                    );
-                  })}
-                </Pressable>
-                <View style={styles.row}>
-                  <Pressable style={styles.secondaryButton} onPress={() => setOcclusions((prev) => prev.slice(0, -1))}>
-                    <Text style={styles.buttonText}>撤销</Text>
-                  </Pressable>
-                  <Pressable style={styles.secondaryButton} onPress={() => setOcclusions([])}>
-                    <Text style={styles.buttonText}>清空遮挡</Text>
-                  </Pressable>
-                  <Text style={styles.metaText}>已标注：{occlusions.length}</Text>
-                </View>
-              </View>
-            )}
-            <View style={styles.row}>
-              <Pressable style={styles.primaryButton} onPress={onSubmit}>
-                <Text style={styles.buttonText}>{editingId ? '保存修改' : '新增卡片'}</Text>
-              </Pressable>
-              {editingId ? (
-                <Pressable style={styles.secondaryButton} onPress={resetForm}>
-                  <Text style={styles.buttonText}>取消编辑</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          </View>
-
-          <View style={styles.formCard}>
-            <Text style={styles.formTitle}>CSV 导入（deck,front,back,tags）</Text>
-            <TextInput multiline value={csvText} onChangeText={setCsvText} style={[styles.input, styles.csvInput]} textAlignVertical="top" />
-            <Pressable style={styles.primaryButton} onPress={onImport}>
-              <Text style={styles.buttonText}>导入 CSV</Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.formCard}>
-            <Text style={styles.formTitle}>批量操作（已选 {selectedIds.length}）</Text>
-            <View style={styles.row}>
-              <TextInput
-                placeholder={`移动到 deckId (可选: ${allDecks.map((d) => `${d.id}:${d.name}`).join(' ')})`}
-                value={targetDeckId}
-                onChangeText={setTargetDeckId}
-                style={[styles.input, { flex: 1 }]}
-              />
-              <Pressable style={styles.primaryButton} onPress={runBulkMove}>
-                <Text style={styles.buttonText}>批量移动</Text>
-              </Pressable>
-            </View>
-            <View style={styles.row}>
-              <TextInput placeholder="批量加标签" value={batchTag} onChangeText={setBatchTag} style={[styles.input, { flex: 1 }]} />
-              <Pressable style={styles.primaryButton} onPress={runBulkTag}>
-                <Text style={styles.buttonText}>批量加标签</Text>
-              </Pressable>
-            </View>
-            <Pressable style={styles.deleteBtn} onPress={runBulkDelete}>
-              <Text style={styles.buttonText}>批量删除（需确认）</Text>
-            </Pressable>
-          </View>
-        </>
-      }
-      renderItem={({ item: card }) => (
-        <CardItem
-          card={card}
-          isSelected={selected.has(card.id)}
-          onToggleSelect={toggleSelect}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
+      {/* ─── Message Toast ───────────────────────────────────────────────── */}
+      {!!message && (
+        <View style={styles.toast}>
+          <Text style={styles.toastText}>{message}</Text>
+        </View>
       )}
-      ListFooterComponent={
+
+      {/* ─── Search / Filter Toolbar ─────────────────────────────────────── */}
+      <View style={styles.toolbar}>
+        <View style={styles.searchRow}>
+          <View style={styles.searchInputWrap}>
+            <Ionicons name="search" size={18} color={Palette.textTertiary} style={styles.searchIcon} />
+            <TextInput
+              placeholder="搜索 front/back/tags..."
+              placeholderTextColor={Palette.textTertiary}
+              value={queryInput}
+              onChangeText={setQueryInput}
+              style={styles.searchInput}
+            />
+          </View>
+          <Pressable style={styles.toolbarIconBtn} onPress={() => setShowCsvModal(true)} hitSlop={8}>
+            <Ionicons name="document-text-outline" size={20} color={Palette.textSecondary} />
+          </Pressable>
+        </View>
+        <View style={styles.filterRow}>
+          <Pressable style={[styles.filterChip, onlyDue && styles.filterChipActive]} onPress={() => setOnlyDue((v) => !v)}>
+            <Text style={[styles.filterChipText, onlyDue && styles.filterChipTextActive]}>仅 due</Text>
+          </Pressable>
+          <Pressable style={[styles.filterChip, onlyLapse && styles.filterChipActive]} onPress={() => setOnlyLapse((v) => !v)}>
+            <Text style={[styles.filterChipText, onlyLapse && styles.filterChipTextActive]}>仅 lapse≥1</Text>
+          </Pressable>
+          <TextInput
+            placeholder="标签筛选"
+            placeholderTextColor={Palette.textTertiary}
+            value={tagFilter}
+            onChangeText={setTagFilter}
+            style={styles.tagFilterInput}
+          />
+        </View>
+      </View>
+
+      {/* ─── Card List ───────────────────────────────────────────────────── */}
+      <FlatList
+        data={filteredCards}
+        keyExtractor={(item) => String(item.id)}
+        contentContainerStyle={styles.listContent}
+        style={styles.list}
+        initialNumToRender={20}
+        windowSize={11}
+        removeClippedSubviews
+        renderItem={({ item: card }) => (
+          <CardItem
+            card={card}
+            isSelected={selected.has(card.id)}
+            onToggleSelect={toggleSelect}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        )}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Ionicons name="albums-outline" size={48} color={Palette.textTertiary} />
+            <Text style={styles.emptyText}>暂无卡片</Text>
+            <Text style={styles.emptyHint}>点击右下角 + 按钮添加</Text>
+          </View>
+        }
+      />
+
+      {/* ─── Batch Action Bar (visible when cards selected) ──────────────── */}
+      {selected.size > 0 && (
+        <View style={styles.batchBar}>
+          <Text style={styles.batchBarText}>已选 {selected.size} 张</Text>
+          <View style={styles.batchActions}>
+            <Pressable style={styles.batchActionBtn} onPress={() => setShowBatchModal(true)}>
+              <Ionicons name="settings-outline" size={18} color={Palette.primary} />
+              <Text style={styles.batchActionLabel}>更多</Text>
+            </Pressable>
+            <Pressable style={styles.batchActionBtn} onPress={runBulkDelete}>
+              <Ionicons name="trash-outline" size={18} color={Palette.danger} />
+              <Text style={[styles.batchActionLabel, { color: Palette.danger }]}>删除</Text>
+            </Pressable>
+            <Pressable style={styles.batchActionBtn} onPress={() => setSelected(new Set())}>
+              <Ionicons name="close-circle-outline" size={18} color={Palette.textSecondary} />
+              <Text style={styles.batchActionLabel}>取消</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* ─── Bottom: Review Button ───────────────────────────────────────── */}
+      <View style={styles.bottomBar}>
         <Link href={`/review/${id}`} style={styles.reviewButton}>
           开始复习
         </Link>
-      }
-    />
+      </View>
+
+      {/* ─── FAB (Floating Action Button) ────────────────────────────────── */}
+      <Pressable style={styles.fab} onPress={openAddModal}>
+        <Ionicons name="add" size={28} color="#FFFFFF" />
+      </Pressable>
+
+      {/* ═════════════════════════════════════════════════════════════════════
+          Add / Edit Card Modal
+          ═════════════════════════════════════════════════════════════════════ */}
+      <Modal visible={showAddModal} animationType="slide" transparent={true} onRequestClose={closeAddModal}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={closeAddModal} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.modalSheet}
+          >
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalTitleRow}>
+                <Text style={styles.modalTitle}>{editingId ? '编辑卡片' : '新增卡片'}</Text>
+                <Pressable onPress={closeAddModal} hitSlop={12}>
+                  <Ionicons name="close" size={24} color={Palette.textSecondary} />
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Modal Body */}
+            <ScrollView
+              style={styles.modalBody}
+              contentContainerStyle={styles.modalBodyContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {/* ── Template Segmented Control ─────────────────────────────── */}
+              <Text style={styles.modalLabel}>模板</Text>
+              <View style={styles.segmentedControl}>
+                {TEMPLATE_OPTIONS.map((opt) => (
+                  <Pressable
+                    key={opt.key}
+                    style={[styles.segment, templateKind === opt.key && styles.segmentActive]}
+                    onPress={() => switchTemplate(opt.key)}
+                  >
+                    <Text style={[styles.segmentText, templateKind === opt.key && styles.segmentTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* Custom template fields definition */}
+              {templateKind === 'custom' && (
+                <TextInput
+                  placeholder="自定义字段（逗号分隔）：如 主题,考点,易错点"
+                  placeholderTextColor={Palette.textTertiary}
+                  value={customTemplateFieldsInput}
+                  onChangeText={setCustomTemplateFieldsInput}
+                  style={styles.modalInput}
+                />
+              )}
+
+              {/* Template field inputs */}
+              {templateKind !== 'none' && templateFields.map((field) => (
+                <TextInput
+                  key={field}
+                  placeholder={field}
+                  placeholderTextColor={Palette.textTertiary}
+                  value={templateValues[field] ?? ''}
+                  onChangeText={(text) => setTemplateValues((prev) => ({ ...prev, [field]: text }))}
+                  style={styles.modalInput}
+                />
+              ))}
+
+              {/* Template preview & apply */}
+              {templateKind !== 'none' && (
+                <>
+                  <View style={styles.previewBox}>
+                    <Text style={styles.previewLabel}>front 预览</Text>
+                    <Text style={styles.previewText}>{templatePreview.front || '-'}</Text>
+                    <Text style={styles.previewLabel}>back 预览</Text>
+                    <Text style={styles.previewText}>{templatePreview.back || '-'}</Text>
+                  </View>
+                  <Pressable style={styles.applyTemplateBtn} onPress={applyTemplateToCard}>
+                    <Text style={styles.applyTemplateBtnText}>一键生成 front/back</Text>
+                  </Pressable>
+                </>
+              )}
+
+              {/* ── Front ─────────────────────────────────────────────────── */}
+              <Text style={styles.modalLabel}>正面 (Front)</Text>
+              <TextInput
+                placeholder="输入卡片正面内容..."
+                placeholderTextColor={Palette.textTertiary}
+                value={front}
+                onChangeText={setFront}
+                multiline
+                style={[styles.modalInput, styles.modalInputMultiline]}
+                textAlignVertical="top"
+              />
+
+              {/* ── Back ──────────────────────────────────────────────────── */}
+              <Text style={styles.modalLabel}>背面 (Back)</Text>
+              <TextInput
+                placeholder="输入卡片背面内容..."
+                placeholderTextColor={Palette.textTertiary}
+                value={back}
+                onChangeText={setBack}
+                multiline
+                style={[styles.modalInput, styles.modalInputMultiline]}
+                textAlignVertical="top"
+              />
+
+              {/* ── Tags ──────────────────────────────────────────────────── */}
+              <Text style={styles.modalLabel}>标签</Text>
+              <TextInput
+                placeholder="标签（可选，; 分隔）"
+                placeholderTextColor={Palette.textTertiary}
+                value={tags}
+                onChangeText={setTags}
+                style={styles.modalInput}
+              />
+
+              {/* ── Image URI ─────────────────────────────────────────────── */}
+              <TextInput
+                placeholder="图片 URI（可选）"
+                placeholderTextColor={Palette.textTertiary}
+                value={imageUri}
+                onChangeText={setImageUri}
+                style={styles.modalInput}
+              />
+
+              {/* ── Occlusion Editor ──────────────────────────────────────── */}
+              {!!imageUri && (
+                <View style={styles.editorWrap}>
+                  <Text style={styles.editorHint}>点击图片添加遮挡标注</Text>
+                  <TextInput
+                    placeholder="遮挡块名称（可选）"
+                    placeholderTextColor={Palette.textTertiary}
+                    value={occlusionLabel}
+                    onChangeText={setOcclusionLabel}
+                    onSubmitEditing={applyLabelToLatest}
+                    style={styles.modalInput}
+                  />
+                  <Pressable onPress={onPressImage} onLayout={onImageBoxLayout} style={styles.imagePressArea}>
+                    <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
+                    {occlusions.map((rect, idx) => {
+                      const abs = toAbsoluteRect(rect, imageBoxSize.width, imageBoxSize.height);
+                      return (
+                        <View key={`${idx}-${rect.x}`} style={[styles.occlusionRect, { left: abs.left, top: abs.top, width: abs.width, height: abs.height }]}>
+                          <Text style={styles.occlusionText}>{rect.label || `#${idx + 1}`}</Text>
+                        </View>
+                      );
+                    })}
+                  </Pressable>
+                  <View style={styles.row}>
+                    <Pressable style={styles.secondaryBtnSmall} onPress={() => setOcclusions((prev) => prev.slice(0, -1))}>
+                      <Text style={styles.btnTextWhite}>撤销</Text>
+                    </Pressable>
+                    <Pressable style={styles.secondaryBtnSmall} onPress={() => setOcclusions([])}>
+                      <Text style={styles.btnTextWhite}>清空</Text>
+                    </Pressable>
+                    <Text style={styles.metaText}>已标注：{occlusions.length}</Text>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Modal Footer: Save */}
+            <View style={styles.modalFooter}>
+              <Pressable style={styles.saveButton} onPress={onSubmit}>
+                <Text style={styles.saveButtonText}>{editingId ? '保存修改' : '保存卡片'}</Text>
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* ═════════════════════════════════════════════════════════════════════
+          CSV Import Modal
+          ═════════════════════════════════════════════════════════════════════ */}
+      <Modal visible={showCsvModal} animationType="slide" transparent={true} onRequestClose={() => setShowCsvModal(false)}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setShowCsvModal(false)} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.csvModalSheet}
+          >
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalTitleRow}>
+                <Text style={styles.modalTitle}>CSV 导入</Text>
+                <Pressable onPress={() => setShowCsvModal(false)} hitSlop={12}>
+                  <Ionicons name="close" size={24} color={Palette.textSecondary} />
+                </Pressable>
+              </View>
+            </View>
+            <View style={styles.csvModalBody}>
+              <Text style={styles.csvHint}>格式：deck,front,back,tags</Text>
+              <TextInput
+                multiline
+                value={csvText}
+                onChangeText={setCsvText}
+                style={styles.csvInput}
+                textAlignVertical="top"
+                placeholderTextColor={Palette.textTertiary}
+              />
+              <Pressable style={styles.saveButton} onPress={onImport}>
+                <Text style={styles.saveButtonText}>导入 CSV</Text>
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* ═════════════════════════════════════════════════════════════════════
+          Batch Operations Modal
+          ═════════════════════════════════════════════════════════════════════ */}
+      <Modal visible={showBatchModal} animationType="slide" transparent={true} onRequestClose={() => setShowBatchModal(false)}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setShowBatchModal(false)} />
+          <View style={styles.batchModalSheet}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalTitleRow}>
+                <Text style={styles.modalTitle}>批量操作（已选 {selectedIds.length} 张）</Text>
+                <Pressable onPress={() => setShowBatchModal(false)} hitSlop={12}>
+                  <Ionicons name="close" size={24} color={Palette.textSecondary} />
+                </Pressable>
+              </View>
+            </View>
+            <View style={styles.batchModalBody}>
+              <Text style={styles.modalLabel}>移动到其他牌组</Text>
+              <View style={styles.batchInputRow}>
+                <TextInput
+                  placeholder={`目标 deckId (${allDecks.map((d) => `${d.id}:${d.name}`).join(', ')})`}
+                  placeholderTextColor={Palette.textTertiary}
+                  value={targetDeckId}
+                  onChangeText={setTargetDeckId}
+                  style={[styles.modalInput, { flex: 1 }]}
+                  keyboardType="number-pad"
+                />
+                <Pressable style={styles.batchConfirmBtn} onPress={runBulkMove}>
+                  <Text style={styles.btnTextWhite}>移动</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.modalLabel}>批量加标签</Text>
+              <View style={styles.batchInputRow}>
+                <TextInput
+                  placeholder="输入标签"
+                  placeholderTextColor={Palette.textTertiary}
+                  value={batchTag}
+                  onChangeText={setBatchTag}
+                  style={[styles.modalInput, { flex: 1 }]}
+                />
+                <Pressable style={styles.batchConfirmBtn} onPress={runBulkTag}>
+                  <Text style={styles.btnTextWhite}>添加</Text>
+                </Pressable>
+              </View>
+              <Pressable style={styles.batchDeleteBtn} onPress={runBulkDelete}>
+                <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.batchDeleteBtnText}>批量删除</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Styles
+// ═══════════════════════════════════════════════════════════════════════════════
+
 const styles = StyleSheet.create({
-  // ── Layout ──────────────────────────────────────────────────────────────────
-  container: { backgroundColor: Palette.background, gap: 12, padding: Spacing.page },
-  title: { fontSize: 24, fontWeight: '700', color: Palette.textPrimary },
-  subtitle: { color: Palette.textSecondary, fontSize: 16, marginBottom: 8 },
-  message: { color: Palette.primary, fontSize: 14, fontWeight: '500' },
+  // ── Screen layout ──────────────────────────────────────────────────────────
+  screen: {
+    flex: 1,
+    backgroundColor: Palette.background,
+  },
+  header: {
+    paddingHorizontal: Spacing.page,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Palette.textPrimary,
+  },
+  subtitle: {
+    color: Palette.textSecondary,
+    fontSize: 14,
+    marginTop: 2,
+  },
 
-  // ── Toolbar / Filters ───────────────────────────────────────────────────────
-  toolbar: { backgroundColor: Palette.surface, borderRadius: Radius.card, gap: 10, padding: Spacing.cardPad, ...CardShadow },
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  toast: {
+    marginHorizontal: Spacing.page,
+    backgroundColor: Palette.primaryLight,
+    borderRadius: Radius.button,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 4,
+  },
+  toastText: {
+    color: Palette.primary,
+    fontSize: 14,
+    fontWeight: '500',
+  },
 
-  // ── Form cards ──────────────────────────────────────────────────────────────
-  formCard: { backgroundColor: Palette.surface, borderRadius: Radius.card, gap: 10, padding: Spacing.cardPad, ...CardShadow },
-  formCardMuted: { backgroundColor: Palette.divider, borderRadius: Radius.input, gap: 4, padding: 12 },
-  formTitle: { fontSize: 16, fontWeight: '700', color: Palette.textPrimary },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: Palette.textSecondary },
-  previewLabel: { color: Palette.textSecondary, fontWeight: '700', fontSize: 12 },
-  previewText: { color: Palette.textPrimary, fontSize: 13 },
+  // ── Toolbar / Filters ─────────────────────────────────────────────────────
+  toolbar: {
+    paddingHorizontal: Spacing.page,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  searchInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Palette.surface,
+    borderRadius: Radius.input,
+    paddingHorizontal: 12,
+    ...CardShadow,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: Palette.textPrimary,
+  },
+  toolbarIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Palette.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...CardShadow,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  filterChip: {
+    backgroundColor: Palette.surface,
+    borderRadius: Radius.badge,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: Palette.border,
+  },
+  filterChipActive: {
+    backgroundColor: Palette.primary,
+    borderColor: Palette.primary,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Palette.textSecondary,
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+  },
+  tagFilterInput: {
+    flex: 1,
+    backgroundColor: Palette.surface,
+    borderRadius: Radius.badge,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    fontSize: 13,
+    color: Palette.textPrimary,
+    borderWidth: 1,
+    borderColor: Palette.border,
+  },
 
-  // ── Inputs ──────────────────────────────────────────────────────────────────
-  input: { backgroundColor: Palette.surface, borderRadius: Radius.input, borderWidth: 1, borderColor: Palette.border, padding: 12, fontSize: 15, color: Palette.textPrimary },
-  csvInput: { minHeight: 110 },
+  // ── Card List ──────────────────────────────────────────────────────────────
+  list: {
+    flex: 1,
+  },
+  listContent: {
+    padding: Spacing.page,
+    paddingTop: 4,
+    gap: 12,
+  },
 
-  // ── Row layouts ─────────────────────────────────────────────────────────────
-  row: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  // ── Empty state ────────────────────────────────────────────────────────────
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 8,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Palette.textSecondary,
+  },
+  emptyHint: {
+    fontSize: 13,
+    color: Palette.textTertiary,
+  },
 
-  // ── Buttons ─────────────────────────────────────────────────────────────────
-  primaryButton: { backgroundColor: Palette.primary, borderRadius: Radius.button, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center' },
-  secondaryButton: { backgroundColor: Palette.textTertiary, borderRadius: Radius.button, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center' },
+  // ── CardItem ───────────────────────────────────────────────────────────────
+  card: {
+    backgroundColor: Palette.surface,
+    borderRadius: Radius.card,
+    gap: 8,
+    padding: Spacing.cardPad,
+    ...CardShadow,
+  },
+  front: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Palette.textPrimary,
+    flex: 1,
+  },
+  back: {
+    color: Palette.textSecondary,
+    fontSize: 15,
+  },
+  meta: {
+    color: Palette.primary,
+    fontSize: 13,
+  },
+  metaText: {
+    color: Palette.primary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  row: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  editBtn: {
+    backgroundColor: Palette.success,
+    borderRadius: Radius.button,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  deleteBtn: {
+    backgroundColor: Palette.danger,
+    borderRadius: Radius.button,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  selectedBadge: {
+    backgroundColor: Palette.success,
+    borderRadius: Radius.badge,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  unselectedBadge: {
+    backgroundColor: Palette.textTertiary,
+    borderRadius: Radius.badge,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  btnTextWhite: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  listThumb: {
+    width: '100%',
+    height: 150,
+    borderRadius: Radius.input,
+    marginVertical: 4,
+  },
 
-  // ── CardItem styles ──────────────────────────────────────────────────────────
-  card: { backgroundColor: Palette.surface, borderRadius: Radius.card, gap: 8, padding: Spacing.cardPad, ...CardShadow },
-  front: { fontSize: 16, fontWeight: '600', color: Palette.textPrimary, flex: 1 },
-  back: { color: Palette.textSecondary, fontSize: 15 },
-  meta: { color: Palette.primary, fontSize: 13 },
-  metaText: { color: Palette.primary, fontSize: 12, fontWeight: '600' },
-  editBtn: { backgroundColor: Palette.success, borderRadius: Radius.button, paddingHorizontal: 14, paddingVertical: 8, alignItems: 'center' },
-  deleteBtn: { backgroundColor: Palette.danger, borderRadius: Radius.button, paddingHorizontal: 14, paddingVertical: 8, alignItems: 'center' },
-  selectedBadge: { backgroundColor: Palette.success, borderRadius: Radius.badge, paddingHorizontal: 10, paddingVertical: 4 },
-  unselectedBadge: { backgroundColor: Palette.textTertiary, borderRadius: Radius.badge, paddingHorizontal: 10, paddingVertical: 4 },
-  badgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
-  buttonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 14 },
+  // ── Batch Action Bar ───────────────────────────────────────────────────────
+  batchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Palette.surface,
+    paddingHorizontal: Spacing.page,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: Palette.border,
+  },
+  batchBarText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Palette.textPrimary,
+  },
+  batchActions: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  batchActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  batchActionLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Palette.primary,
+  },
+
+  // ── Bottom Bar & Review ────────────────────────────────────────────────────
+  bottomBar: {
+    paddingHorizontal: Spacing.page,
+    paddingVertical: 12,
+    paddingBottom: 20,
+    backgroundColor: Palette.background,
+  },
   reviewButton: {
     backgroundColor: Palette.primary,
     borderRadius: Radius.button,
     color: '#FFFFFF',
-    marginTop: 8,
     overflow: 'hidden',
     padding: 16,
     textAlign: 'center',
@@ -513,9 +987,179 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ── Occlusion editor ────────────────────────────────────────────────────────
-  editorWrap: { gap: 8 },
-  editorHint: { color: Palette.textSecondary, fontSize: 12 },
+  // ── FAB ────────────────────────────────────────────────────────────────────
+  fab: {
+    position: 'absolute',
+    right: Spacing.page,
+    bottom: 90,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Palette.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...CardShadowHeavy,
+  },
+
+  // ── Modal (shared) ─────────────────────────────────────────────────────────
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalSheet: {
+    backgroundColor: Palette.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    alignItems: 'center',
+    paddingTop: 12,
+    paddingHorizontal: Spacing.page,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Palette.border,
+    marginBottom: 12,
+  },
+  modalTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Palette.textPrimary,
+  },
+  modalBody: {
+    flexGrow: 1,
+    flexShrink: 1,
+  },
+  modalBodyContent: {
+    paddingHorizontal: Spacing.page,
+    paddingBottom: 16,
+    gap: 12,
+  },
+  modalLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Palette.textSecondary,
+    marginTop: 4,
+  },
+  modalInput: {
+    backgroundColor: Palette.divider,
+    borderRadius: Radius.input,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: Palette.textPrimary,
+  },
+  modalInputMultiline: {
+    minHeight: 100,
+  },
+  modalFooter: {
+    paddingHorizontal: Spacing.page,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    borderTopWidth: 1,
+    borderTopColor: Palette.divider,
+  },
+
+  // ── Segmented Control ──────────────────────────────────────────────────────
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: Palette.divider,
+    borderRadius: 10,
+    padding: 3,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  segmentActive: {
+    backgroundColor: Palette.surface,
+    ...CardShadow,
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Palette.textSecondary,
+  },
+  segmentTextActive: {
+    color: Palette.primary,
+    fontWeight: '600',
+  },
+
+  // ── Template Preview ───────────────────────────────────────────────────────
+  previewBox: {
+    backgroundColor: Palette.divider,
+    borderRadius: Radius.input,
+    padding: 12,
+    gap: 4,
+  },
+  previewLabel: {
+    color: Palette.textSecondary,
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  previewText: {
+    color: Palette.textPrimary,
+    fontSize: 13,
+  },
+  applyTemplateBtn: {
+    backgroundColor: Palette.primaryLight,
+    borderRadius: Radius.button,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  applyTemplateBtnText: {
+    color: Palette.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // ── Save Button ────────────────────────────────────────────────────────────
+  saveButton: {
+    backgroundColor: Palette.primary,
+    borderRadius: Radius.button,
+    paddingVertical: 16,
+    alignItems: 'center',
+    ...CardShadow,
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  // ── Small secondary buttons ────────────────────────────────────────────────
+  secondaryBtnSmall: {
+    backgroundColor: Palette.textTertiary,
+    borderRadius: Radius.button,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+
+  // ── Occlusion Editor ───────────────────────────────────────────────────────
+  editorWrap: {
+    gap: 8,
+  },
+  editorHint: {
+    color: Palette.textSecondary,
+    fontSize: 12,
+  },
   imagePressArea: {
     borderRadius: Radius.input,
     overflow: 'hidden',
@@ -525,7 +1169,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Palette.border,
   },
-  previewImage: { width: '100%', height: '100%' },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
   occlusionRect: {
     position: 'absolute',
     backgroundColor: 'rgba(37, 99, 235, 0.65)',
@@ -534,6 +1181,73 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  occlusionText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
-  listThumb: { width: '100%', height: 150, borderRadius: Radius.input, marginVertical: 4 },
+  occlusionText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // ── CSV Modal ──────────────────────────────────────────────────────────────
+  csvModalSheet: {
+    backgroundColor: Palette.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '60%',
+  },
+  csvModalBody: {
+    paddingHorizontal: Spacing.page,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    gap: 12,
+  },
+  csvHint: {
+    color: Palette.textSecondary,
+    fontSize: 13,
+  },
+  csvInput: {
+    backgroundColor: Palette.divider,
+    borderRadius: Radius.input,
+    padding: 14,
+    fontSize: 14,
+    color: Palette.textPrimary,
+    minHeight: 120,
+  },
+
+  // ── Batch Modal ────────────────────────────────────────────────────────────
+  batchModalSheet: {
+    backgroundColor: Palette.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  batchModalBody: {
+    paddingHorizontal: Spacing.page,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    gap: 12,
+  },
+  batchInputRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  batchConfirmBtn: {
+    backgroundColor: Palette.primary,
+    borderRadius: Radius.button,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  batchDeleteBtn: {
+    backgroundColor: Palette.danger,
+    borderRadius: Radius.button,
+    paddingVertical: 14,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  batchDeleteBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });
