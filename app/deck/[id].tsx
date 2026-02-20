@@ -38,9 +38,7 @@ import {
   updateCard,
 } from '@/data/sqlite';
 
-const DEFAULT_CSV = `deck,front,back,tags
-数学,导数的定义,f'(x)=lim(h->0) (f(x+h)-f(x))/h,calculus;math
-英语,ubiquitous,无处不在的,vocabulary;advanced`;
+const DEFAULT_CSV = '';
 
 const IMAGE_BOX_HEIGHT = 220;
 
@@ -73,7 +71,7 @@ const CardItem = memo(function CardItem({ card, isSelected, onToggleSelect, onEd
       </View>
       {!!card.image_uri && <Image source={{ uri: card.image_uri }} style={styles.listThumb} resizeMode="cover" />}
       <Text style={styles.back} numberOfLines={3}>{card.back}</Text>
-      <Text style={styles.meta}>tags: {card.tags || '-'} | lapse: {card.lapse_count ?? 0} | 遮挡: {marks.length}</Text>
+      <Text style={styles.meta}>标签: {card.tags || '无'} | 遗忘次数: {card.lapse_count ?? 0} | 遮挡题: {marks.length > 0 ? marks.length : '无'}</Text>
       <View style={styles.row}>
         <Pressable style={styles.editBtn} onPress={() => onEdit(card)}>
           <Text style={styles.btnTextWhite}>编辑</Text>
@@ -374,10 +372,10 @@ export default function DeckDetailScreen() {
         </View>
         <View style={styles.filterRow}>
           <Pressable style={[styles.filterChip, onlyDue && styles.filterChipActive]} onPress={() => setOnlyDue((v) => !v)}>
-            <Text style={[styles.filterChipText, onlyDue && styles.filterChipTextActive]}>仅 due</Text>
+            <Text style={[styles.filterChipText, onlyDue && styles.filterChipTextActive]}>今日待复习</Text>
           </Pressable>
           <Pressable style={[styles.filterChip, onlyLapse && styles.filterChipActive]} onPress={() => setOnlyLapse((v) => !v)}>
-            <Text style={[styles.filterChipText, onlyLapse && styles.filterChipTextActive]}>仅 lapse≥1</Text>
+            <Text style={[styles.filterChipText, onlyLapse && styles.filterChipTextActive]}>曾遗忘/易错</Text>
           </Pressable>
           <TextInput
             placeholder="标签筛选"
@@ -639,8 +637,11 @@ export default function DeckDetailScreen() {
                 </Pressable>
               </View>
             </View>
-            <View style={styles.csvModalBody}>
-              <Text style={styles.csvHint}>格式：deck,front,back,tags</Text>
+            <ScrollView style={styles.csvModalBody} contentContainerStyle={styles.csvModalBodyContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <Text style={styles.csvGuideTitle}>{'💡 批量导入指南'}</Text>
+              <Text style={styles.csvGuideText}>
+                {'1. 推荐使用 Excel 或 WPS 整理你的题目，然后另存为 .csv 格式。\n2. 数据必须包含 4 列，顺序依次为：卡包名, 正面(题目), 背面(答案), 标签(选填)。\n3. 你也可以直接在下方粘贴符合格式的文本。'}
+              </Text>
               <TextInput
                 multiline
                 value={csvText}
@@ -648,11 +649,12 @@ export default function DeckDetailScreen() {
                 style={styles.csvInput}
                 textAlignVertical="top"
                 placeholderTextColor={Palette.textTertiary}
+                placeholder={'解剖学,肱骨的解剖颈在哪里？,位于大结节和小结节下方,骨科;解剖\n生化,三羧酸循环的限速酶是？,异柠檬酸脱氢酶,生化;代谢'}
               />
               <Pressable style={styles.saveButton} onPress={onImport}>
-                <Text style={styles.saveButtonText}>导入 CSV</Text>
+                <Text style={styles.saveButtonText}>开始批量导入</Text>
               </Pressable>
-            </View>
+            </ScrollView>
           </KeyboardAvoidingView>
         </View>
       </Modal>
@@ -1192,16 +1194,26 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '60%',
+    maxHeight: '75%',
   },
   csvModalBody: {
+    flexGrow: 1,
+    flexShrink: 1,
+  },
+  csvModalBodyContent: {
     paddingHorizontal: Spacing.page,
     paddingBottom: Platform.OS === 'ios' ? 34 : 20,
     gap: 12,
   },
-  csvHint: {
-    color: Palette.textSecondary,
+  csvGuideTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Palette.textPrimary,
+  },
+  csvGuideText: {
     fontSize: 13,
+    lineHeight: 20,
+    color: Palette.textSecondary,
   },
   csvInput: {
     backgroundColor: Palette.divider,
