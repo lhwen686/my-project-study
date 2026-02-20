@@ -61,6 +61,15 @@ export type StatsSummary = {
   masteryByDeck: DeckMastery[];
 };
 
+export type DayDueCount = { date: string; label: string; count: number };
+export type CardMasteryBucket = { name: string; count: number; color: string };
+export type DashboardData = {
+  todayCompleted: number;
+  dailyGoal: number;
+  next7Days: DayDueCount[];
+  masteryBuckets: CardMasteryBucket[];
+};
+
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 const getDb = async () => (dbPromise ??= SQLite.openDatabaseAsync('review-app.db'));
 
@@ -521,3 +530,54 @@ export async function createReview(cardId: number, rating: number) {
   return db.getFirstAsync<Review>('SELECT * FROM reviews WHERE id = ?;', r.lastInsertRowId);
 }
 export async function deleteReview(id: number) { await (await getDb()).runAsync('DELETE FROM reviews WHERE id=?;', id); }
+
+export async function getDashboardData(now: Date = new Date()): Promise<DashboardData> {
+  const db = await getDb();
+  const todayCompleted = await getTodayCompletedCount(now);
+
+  // ── Next 7 days due forecast ──
+  const next7Days: DayDueCount[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    const dayStart = d.toISOString().slice(0, 10) + 'T00:00:00.000Z';
+    const dayEnd = d.toISOString().slice(0, 10) + 'T23:59:59.999Z';
+    let count: number;
+    if (i === 0) {
+      // Today: all cards due up to end of today
+      const row = await db.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) as count FROM cards WHERE due_date <= ?;',
+        dayEnd,
+      );
+      count = row?.count ?? 0;
+    } else {
+      // Future days: cards with due_date in that day's range
+      const row = await db.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) as count FROM cards WHERE due_date > ? AND due_date <= ?;',
+        dayStart,
+        dayEnd,
+      );
+      count = row?.count ?? 0;
+    }
+    const label = `${d.getMonth() + 1}/${d.getDate()}`;
+    next7Days.push({ date: d.toISOString().slice(0, 10), label, count });
+  }
+
+  // ── Card mastery buckets ──
+  const newCards = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM cards WHERE repetition = 0;',
+  );
+  const shortTerm = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM cards WHERE repetition > 0 AND interval_days < 5;',
+  );
+  const longTerm = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM cards WHERE repetition > 0 AND interval_days >= 5;',
+  );
+  const masteryBuckets: CardMasteryBucket[] = [
+    { name: '待学习', count: newCards?.count ?? 0, color: '#94A3B8' },
+    { name: '短期记忆', count: shortTerm?.count ?? 0, color: '#2563EB' },
+    { name: '长期记忆', count: longTerm?.count ?? 0, color: '#10B981' },
+  ];
+
+  return { todayCompleted, dailyGoal: 50, next7Days, masteryBuckets };
+}
