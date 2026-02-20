@@ -62,12 +62,12 @@ export default function StatsScreen() {
               <Text style={[styles.statNumber, styles.statNumberDanger]}>
                 {state.data.lapsesCount}
               </Text>
-              <Text style={styles.statLabel}>Lapses</Text>
+              <Text style={styles.statLabel}>遗忘次数</Text>
             </View>
           </View>
 
           {/* ── Mastery by deck ── */}
-          <Text style={styles.sectionTitle}>按 Deck 掌握度（7 日正确率）</Text>
+          <Text style={styles.sectionTitle}>按卡包掌握度（7 日正确率）</Text>
           {state.data.masteryByDeck.length === 0 ? (
             <View style={styles.emptyCard}>
               <Text style={styles.emptyText}>最近 7 日暂无复习数据</Text>
