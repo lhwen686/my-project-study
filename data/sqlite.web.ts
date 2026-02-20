@@ -51,6 +51,15 @@ export type StatsSummary = {
   masteryByDeck: DeckMastery[];
 };
 
+export type DayDueCount = { date: string; label: string; count: number };
+export type CardMasteryBucket = { name: string; count: number; color: string };
+export type DashboardData = {
+  todayCompleted: number;
+  dailyGoal: number;
+  next7Days: DayDueCount[];
+  masteryBuckets: CardMasteryBucket[];
+};
+
 const seedDecks = [
   { name: '数学', description: '代数与几何复习卡' },
   { name: '英语', description: '词汇与语法复习卡' },
@@ -479,4 +488,35 @@ export async function createReview(cardId: number, rating: number) {
 export async function deleteReview(id: number) {
   ensureInit();
   state.reviews = state.reviews.filter((r) => r.id !== id);
+}
+
+export async function getDashboardData(now: Date = new Date()): Promise<DashboardData> {
+  ensureInit();
+  const todayCompleted = await getTodayCompletedCount(now);
+
+  // ── Next 7 days due forecast ──
+  const next7Days: DayDueCount[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    const dayStart = d.toISOString().slice(0, 10) + 'T00:00:00.000Z';
+    const dayEnd = d.toISOString().slice(0, 10) + 'T23:59:59.999Z';
+    let count: number;
+    if (i === 0) {
+      count = state.cards.filter((c) => c.due_date <= dayEnd).length;
+    } else {
+      count = state.cards.filter((c) => c.due_date > dayStart && c.due_date <= dayEnd).length;
+    }
+    const label = `${d.getMonth() + 1}/${d.getDate()}`;
+    next7Days.push({ date: d.toISOString().slice(0, 10), label, count });
+  }
+
+  // ── Card mastery buckets ──
+  const masteryBuckets: CardMasteryBucket[] = [
+    { name: '待学习', count: state.cards.filter((c) => c.repetition === 0).length, color: '#94A3B8' },
+    { name: '短期记忆', count: state.cards.filter((c) => c.repetition > 0 && c.interval_days < 5).length, color: '#2563EB' },
+    { name: '长期记忆', count: state.cards.filter((c) => c.repetition > 0 && c.interval_days >= 5).length, color: '#10B981' },
+  ];
+
+  return { todayCompleted, dailyGoal: 50, next7Days, masteryBuckets };
 }
