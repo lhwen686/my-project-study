@@ -29,14 +29,14 @@ export default function DecksScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>科目列表</Text>
+      <Text style={styles.title}>卡包</Text>
       {loading ? (
         <ActivityIndicator size="large" color={Palette.primary} style={{ marginTop: 24 }} />
       ) : decks.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyIcon}>📚</Text>
           <Text style={styles.emptyTitle}>暂无科目</Text>
-          <Text style={styles.emptyText}>请先在卡片列表中创建 Deck</Text>
+          <Text style={styles.emptyText}>请先创建一个卡包</Text>
         </View>
       ) : (
         decks.map((deck) => (
