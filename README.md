@@ -1,33 +1,34 @@
 # Expo 复习 App（TypeScript + expo-router）
 
-已创建一个 Expo + TypeScript 项目，并使用 **expo-router** 完成导航，包含以下页面：
+基于 **Expo 54 + TypeScript + expo-router** 构建的间隔重复记忆卡片应用，集成 SM-2 调度算法、SQLite 持久化、Markdown/LaTeX 富文本渲染、图片遮挡标注等功能，适用于医学/语言等学科的高效复习。
 
-- Home（今日复习）
-- Decks（科目列表）
-- DeckDetail（卡片列表）
-- Review（复习界面）
-- Stats（统计）
+## 功能概览
 
-## SQLite 持久化 + SM-2 调度
+| 功能 | 说明 |
+|------|------|
+| **SM-2 间隔重复** | 经典 Supermemo 2 算法，自动调度复习间隔与记忆系数 |
+| **SQLite 持久化** | 原生端使用 expo-sqlite（WAL 模式），Web 端使用内存数据层 |
+| **富文本渲染** | 支持 Markdown（markdown-it）+ LaTeX 公式（KaTeX），WebView 沙盒渲染 |
+| **图片遮挡标注** | 归一化坐标保存遮挡矩形，复习时随机抽取提问 |
+| **模板化建卡** | 内置解剖/生化模板，支持自定义字段，一键生成 front/back |
+| **CSV 导入** | RFC 4180 兼容解析，支持自动创建 deck |
+| **数据导入导出** | JSON 全量备份，支持合并/覆盖模式，Zod 校验 |
+| **统计仪表盘** | 完成进度环、7 日预测柱状图、掌握度分布饼图 |
+| **每日提醒** | expo-notifications 定时通知，含预计复习时长估算 |
+| **批量操作** | 多选卡片批量移动/加标签/删除 |
+| **搜索与筛选** | front/back/tags 多字段检索（150ms 防抖）+ due/lapse/标签筛选 |
 
-应用集成 `expo-sqlite`（原生端），首次启动会自动创建并初始化以下表：
+## 技术栈
 
-- `decks`
-- `cards`
-- `reviews`
-
-并自动写入 seed 数据（2 个 deck，10 张 cards），Decks 页会直接展示 seed 的科目列表。
-
-卡片调度实现了 SM-2 核心字段更新：
-
-- `interval_days`
-- `ease_factor`
-- `due_date`
-- `repetition`
-
-Stats 页会显示“今日待复习卡片数（due cards）”。
-
-> 说明：Web 端为了兼容运行与预览，使用了内存数据层（API 与原生端一致）；原生端使用 SQLite 持久化。
+- **框架**: Expo 54 + React Native + expo-router 6
+- **语言**: TypeScript 5.9
+- **数据库**: expo-sqlite 16（WAL 模式，外键约束）
+- **富文本**: markdown-it 14 + KaTeX 0.16（WebView 渲染）
+- **图表**: react-native-chart-kit + react-native-svg
+- **校验**: Zod 4
+- **通知**: expo-notifications
+- **测试**: Vitest 4
+- **CI**: GitHub Actions
 
 ## 运行方式
 
@@ -42,11 +43,173 @@ npm start
 - `i` 打开 iOS 模拟器（仅 macOS）
 - `w` 打开 Web
 
-## 内测打包（EAS Build，Android 优先）
+## 路由结构
 
-本项目已加入 `eas.json`，包含 `development / preview / production` 三个 profile；内测建议先用 `preview` 产出 Android APK。
+```
+app/
+├── _layout.tsx              # 根布局（SQLite 初始化 + 主题）
+├── (tabs)/
+│   ├── _layout.tsx          # 底部 Tab 导航（4 个标签）
+│   ├── index.tsx            # Home - 今日待复习
+│   ├── decks.tsx            # Decks - 科目列表
+│   ├── stats.tsx            # Stats - 统计仪表盘
+│   └── settings.tsx         # Settings - 导入导出与设置
+├── deck/[id].tsx            # DeckDetail - 卡片管理
+└── review/[id].tsx          # Review - 复习界面
+```
 
-### 0) 首次准备（你需要手动操作）
+## 数据层
+
+```
+data/
+├── sqlite.native.ts         # 原生端 SQLite（建表/seed/CRUD/SM-2/统计/导入导出）
+├── sqlite.web.ts            # Web 端兼容内存数据层（同 API 接口）
+├── sm2.ts                   # SM-2 调度算法实现
+├── occlusion.ts             # 图片遮挡坐标系统（归一化 0~1）
+├── templates.ts             # 模板化建卡（解剖/生化/自定义）
+├── csv.ts                   # CSV 解析器（RFC 4180）
+├── review-flow.ts           # 复习流程状态管理
+└── db.ts                    # 数据库常量
+```
+
+### 数据库表结构
+
+| 表名 | 说明 |
+|------|------|
+| `decks` | 科目（name, description） |
+| `cards` | 卡片（front, back, tags, image_uri, occlusions, SM-2 调度字段） |
+| `reviews` | 复习记录（rating, duration_seconds） |
+| `app_meta` | 应用元数据（schemaVersion, 提醒设置等） |
+
+首次启动自动写入 seed 数据（2 个 deck + 10 张卡片）。
+
+## 核心功能详情
+
+### SM-2 间隔重复
+
+- 评分映射：`会=5`、`模糊=3`、`不会=1`
+- quality < 3 时重置间隔为 1 天；quality >= 3 时按 ease factor 递增间隔
+- ease factor 最低 1.3，防止间隔过短
+- 选择"不会"计入 `lapses` 统计
+
+### Review 复习流程
+
+1. 展示正面（支持 Markdown/LaTeX 富文本 + 图片遮挡）
+2. 点击翻面查看答案
+3. 选择 `会 / 模糊 / 不会`，触发 SM-2 更新
+4. 原子事务：复习记录 + 卡片状态在同一事务中更新
+5. 完成后显示"今日复习全部完成！"
+
+### 富文本渲染
+
+- 自动检测内容是否包含 Markdown/LaTeX 语法
+- 纯文本走原生 `<Text>` 快速路径，零开销
+- 富文本通过 WebView 沙盒渲染，支持表格、代码块、引用等
+- LaTeX 支持行内公式 `$...$` 和独立公式 `$$...$$`
+- 动态高度计算 + 淡入动画
+
+### 图片遮挡标注
+
+- 点击图片添加遮挡矩形，可为每个遮挡填写结构名
+- 坐标归一化保存（0~1），适配不同屏幕尺寸
+- 复习时随机抽取一个遮挡作为提问，翻面显示答案与结构名
+
+### 统计仪表盘
+
+- **今日进度**：进度环展示完成百分比
+- **7 日预测**：柱状图预估未来复习量
+- **掌握度分布**：饼图显示待学习/短期记忆/长期记忆分布
+- 连续天数统计 + 按 Deck 掌握度（近 7 日正确率）
+
+### 卡片管理（DeckDetail）
+
+- 新增/编辑/删除卡片
+- 搜索：front/back/tags 多字段检索（150ms 防抖）
+- 筛选：仅 due、仅 lapse>=1、按标签
+- 批量操作：多选后批量移动/加标签/删除（含二次确认）
+- FlatList 虚拟化渲染，支持 1000+ 卡片
+
+### 模板化建卡
+
+- **解剖模板**：结构名 / 位置 / 支配 / 血供 / 临床要点
+- **生化模板**：通路步骤 / 限速酶 / 调控 / 抑制剂 / 相关疾病
+- 支持自定义模板字段（逗号分隔）
+- 一键生成 front/back 预览，保存后直接进入复习
+
+### CSV 导入
+
+- 字段格式：`deck,front,back,tags`
+- 示例文件：`samples/cards-import.csv`
+- 自动创建不存在的 deck，事务性导入
+
+### 导入导出（Settings）
+
+- **导出**：全量 JSON（decks/cards/reviews + schemaVersion + exportedAt），可分享
+- **合并导入**：仅添加新数据，不覆盖
+- **覆盖导入**：完全替换（黄色警示标签）
+- **清空数据**：危险操作，含确认对话框
+- 导入前 Zod schema 校验，失败提示具体字段路径
+
+### 每日提醒
+
+- Settings 页设置开关与提醒时间（默认 21:30）
+- 通知文案：`今日待复习 X 张，预计 Y 分钟`（基于近 7 日平均耗时估算）
+- 若当天已完成可配置为不提醒或提醒"已完成"
+
+## 组件
+
+```
+components/
+├── RichTextRenderer.tsx      # 富文本渲染（Markdown + LaTeX，双轨渲染）
+├── haptic-tab.tsx            # 触觉反馈 Tab
+├── parallax-scroll-view.tsx  # 视差滚动
+├── themed-text.tsx           # 主题文本
+├── themed-view.tsx           # 主题视图
+├── external-link.tsx         # 外部链接
+└── ui/
+    ├── icon-symbol.tsx       # 跨平台图标
+    └── collapsible.tsx       # 折叠面板
+```
+
+## 设计系统
+
+应用使用统一的设计令牌（`constants/design-tokens.ts`）：
+
+- **主色**：`#2563EB`（蓝）
+- **危险色**：`#EF4444`（红）
+- **成功色**：`#10B981`（绿）
+- **圆角**：card 16px / button 12px / badge 20px
+- **间距**：page 20 / gap 16 / cardPad 16
+- 支持 iOS/Android 平台阴影适配
+
+## 测试与 CI
+
+```bash
+npm run test         # Vitest 运行全部测试
+npm run typecheck    # TypeScript 类型检查
+npm run lint         # ESLint 检查
+npm run verify       # typecheck + lint + test 一键验证
+```
+
+测试文件：
+
+| 文件 | 覆盖内容 |
+|------|----------|
+| `data/sm2.test.ts` | SM-2 算法核心逻辑 |
+| `data/sm2.boundary.test.ts` | SM-2 边界条件 |
+| `data/templates.test.ts` | 模板生成 |
+| `data/occlusion.test.ts` | 遮挡坐标解析 |
+| `data/review-flow.integration.test.ts` | 复习流程集成 |
+| `data/sqlite.web.test.ts` | Web 数据层 |
+| `services/rich-text-html.test.ts` | 富文本 HTML 生成 |
+
+CI 配置：`.github/workflows/ci.yml`，在 push/PR 时自动运行 `npm ci && npm run test`。
+
+## 内测打包（EAS Build）
+
+项目已配置 `eas.json`，包含 development / preview / production 三个 profile。
+
+### 首次准备
 
 ```bash
 npm install
@@ -54,114 +217,35 @@ npx eas login
 npx eas build:configure
 ```
 
-说明：
-
-- `npx eas login` 需要你在终端交互登录 Expo 账号。
-- `npx eas build:configure` 可能会提示你选择平台、绑定/创建 EAS Project，这一步需要你手动确认选项。
-
-### 1) 构建 Android 内测包（推荐）
+### 构建 Android 内测包（推荐）
 
 ```bash
 npx eas build -p android --profile preview
 ```
 
-- 该命令会走云端构建，产出可安装的 APK（适合内测分发）。
-- 若是首次 Android 构建，EAS 会提示证书/keystore 处理：可选择让 EAS 自动管理（推荐），需要你在交互提示里确认。
+产出可安装 APK，适合内测分发。首次构建时 EAS 会提示 keystore 处理，选择自动管理即可。
 
-### 2) 可选：构建 Android 正式包（AAB）
+### 构建 Android 正式包
 
 ```bash
 npx eas build -p android --profile production
 ```
 
-### 3) 可选：构建 iOS 内测包
+### 构建 iOS 内测包
 
 ```bash
 npx eas build -p ios --profile preview
 ```
 
-- iOS 首次构建通常需要 Apple Developer 账号登录、证书与 Provisioning Profile 配置，均为交互式步骤，需要你手动完成。
+iOS 首次构建需要 Apple Developer 账号及证书配置。
 
-## 路由结构
+## 项目配置
 
-- `app/(tabs)/index.tsx` -> Home
-- `app/(tabs)/decks.tsx` -> Decks
-- `app/deck/[id].tsx` -> DeckDetail
-- `app/review/[id].tsx` -> Review
-- `app/(tabs)/stats.tsx` -> Stats
+- **App 名称**：my-project
+- **包名**：com.lhw686.myproject
+- **JS 引擎**：Hermes
+- **新架构**：已启用
+- **React Compiler**：已启用
+- **TypedRoutes**：已启用
 
-## 数据层
-
-- `data/sqlite.native.ts`：原生端 SQLite 数据层（建表/seed/CRUD/SM-2）
-- `data/sqlite.web.ts`：Web 端兼容数据层（同 API）
-- `data/sm2.ts`：SM-2 调度函数与规则
-- `data/sm2.test.ts`：6 个测试用例
-
-
-## Review 流程
-
-- 展示正面 → 点击翻面 → 选择 `会/模糊/不会`。
-- 评分映射：`会=5`、`模糊=3`、`不会=1`，会调用 SM-2 更新 `interval/easeFactor/dueDate`。
-- 今日 due 卡片复习完成后，会显示完成提示。
-- 选择“不会”会计入 `lapses` 统计（Stats 页展示）。
-
-
-## 卡片管理与 CSV 导入
-
-- DeckDetail 页面支持卡片 **新增 / 编辑 / 删除**。
-- 支持 CSV 导入字段：`deck,front,back,tags`。
-- 示例 CSV 文件：`samples/cards-import.csv`。
-- 导入后会立即写入数据层并可在 UI 中看到新增卡片。
-
-
-## Stats 聚合
-
-- 今日完成数（来自 reviews 当天记录）。
-- 连续天数（按 reviews 日期连续计算）。
-- 按 Deck 掌握度：最近 7 日正确率近似（rating >= 3 视为正确）。
-
-
-## Settings（导入导出与迁移）
-
-- 导出全量 JSON：`decks/cards/reviews + schemaVersion + exportedAt`，保存到本地并可分享。
-- 导入 JSON：支持 **合并** / **覆盖** 两种模式；导入前使用 `zod` 校验，失败会提示具体字段路径。
-- 提供数据库清空按钮用于验收（导出 -> 清空 -> 导入）。
-- 引入 `schemaVersion` 与 `app_meta`，为后续表结构升级提供迁移框架。
-
-
-## 测试与 CI
-
-- 本地一键复现：`npm run test`。
-- CI：`.github/workflows/ci.yml` 在 GitHub Actions 上执行 `npm ci && npm run test`。
-
-
-## 每日提醒（expo-notifications）
-
-- Settings 支持提醒开关与每日提醒时间设置（默认 21:30，可修改）。
-- 提醒文案：`今日待复习 X 张，预计 Y 分钟`，其中 Y 基于近 7 日平均每张耗时估计。
-- 若当天已完成：可配置为不提醒或提醒“已完成✅”。
-
-
-## DeckDetail 高级卡片管理
-
-- 搜索：支持 front/back/tags 多字段检索（含 150ms debounce）。
-- 筛选：仅 due、仅 lapse≥1、按标签筛选。
-- 批量操作：批量移动 deck、批量加标签、批量删除（含二次确认）。
-- 性能：列表改为 `FlatList`，支持 1000+ 卡片虚拟化渲染。
-
-
-## 图片卡与遮挡标注
-
-- 卡片支持附加一张图片（本地路径 / asset URI）。
-- DeckDetail 内置遮挡标注编辑器：点击图片可连续添加遮挡矩形，并可为每个遮挡填写结构名。
-- 复习时会从该卡片的遮挡块中随机抽取一个作为提问，翻面后显示答案并可显示结构名。
-- 遮挡坐标采用归一化保存（0~1），不同屏幕尺寸会按比例缩放显示。
-
-
-## 模板化建卡
-
-- 新建卡片可选择模板：
-  - 解剖模板：结构名 / 位置 / 支配 / 血供 / 临床要点
-  - 生化模板：通路步骤 / 限速酶 / 调控 / 抑制剂 / 相关疾病
-- 支持自定义模板字段（逗号分隔），字段填写后会自动生成 front/back 预览。
-- 点击“一键生成 front/back”可直接回填卡片内容，再按原流程保存并进入复习。
+> Web 端为兼容运行与预览使用内存数据层，API 与原生端一致。
